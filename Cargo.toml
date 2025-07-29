@@ -9,4 +9,5 @@ dotenv = "0.15.0"
 google-ai-rs = "0.1.1"
 ratatui = "0.29.0"
 serde = { version = "1.0.219", features = ["derive"] }
+tempfile = "3.20.0"
 tokio = { version = "1.47.0", features = ["full"] }
