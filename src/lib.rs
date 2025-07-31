@@ -8,6 +8,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
+use google_ai_rs::{Client, GenerativeModel};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::{
@@ -22,10 +23,12 @@ use tokio::time::sleep;
 
 // Importe les modules que nous allons créer
 mod ai;
-mod ui; // Déclare le module ui // Déclare le module ai
+mod ui;
 
 use ai::get_gemini_response_static;
-use ui::draw_ui; // Importe la fonction draw_ui du module ui // Importe la fonction get_gemini_response_static du module ai
+use ui::draw_ui;
+
+use crate::ai::get_gemini_response;
 
 /// Représente l'état de l'application TUI.
 pub struct App {
@@ -91,8 +94,10 @@ impl App {
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     // La clé API n'est plus strictement nécessaire pour le moment, mais on la garde pour plus tard.
-    let _api_key = std::env::var("GOOGLE_API_KEY")
+    let api_key = std::env::var("GOOGLE_API_KEY")
         .expect("GOOGLE_API_KEY not set in .env file or environment variables");
+
+    let client = Arc::new(Client::new(api_key.into()).await?);
 
     // Initialisation du terminal Crossterm et Ratatui
     enable_raw_mode()?;
@@ -104,13 +109,18 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Crée une nouvelle instance de notre application
     let mut app = App::new();
+    let client_for_spawn = Arc::clone(&client);
     let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
 
     // Lance la tâche asynchrone pour la "réponse Gemini" (statique pour l'instant)
     tokio::spawn(async move {
+        let model = GenerativeModel::new(&client_for_spawn, "gemini-2.5-flash");
+        // match get_gemini_response(model).await {
         match get_gemini_response_static().await {
             Ok(response) => {
                 let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
+                // *response_guard = response;
+                // *response_guard = response.text();
                 *response_guard = response;
             }
             Err(e) => {

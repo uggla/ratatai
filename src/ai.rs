@@ -1,5 +1,6 @@
 // src/ai.rs
 
+use google_ai_rs::{GenerativeModel, genai::Response};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -14,7 +15,6 @@ pub async fn get_gemini_response_static() -> Result<String, Box<dyn std::error::
 }
 
 // L'ancienne fonction commentée peut être mise ici si tu veux la garder pour référence :
-/*
 pub async fn get_gemini_response<'a>(
     model: GenerativeModel<'a>,
 ) -> Result<Response, Box<dyn std::error::Error>> {
@@ -23,4 +23,3 @@ pub async fn get_gemini_response<'a>(
         .await?;
     Ok(response)
 }
-*/
