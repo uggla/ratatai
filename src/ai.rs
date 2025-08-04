@@ -17,9 +17,11 @@ pub async fn get_gemini_response_static() -> Result<String, Box<dyn std::error::
 // L'ancienne fonction commentée peut être mise ici si tu veux la garder pour référence :
 pub async fn get_gemini_response<'a>(
     model: GenerativeModel<'a>,
+    prompt: String,
 ) -> Result<Response, Box<dyn std::error::Error>> {
     let response = model
-        .generate_content("Qu'est-ce que Rust et pourquoi est-il populaire ?")
+        // .generate_content("Qu'est-ce que Rust et pourquoi est-il populaire ?")
+        .generate_content(prompt)
         .await?;
     Ok(response)
 }

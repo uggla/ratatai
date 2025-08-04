@@ -2,13 +2,14 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style, Stylize},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style, Color},
+    widgets::{Block, Borders, Paragraph, Row, Cell, Table, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use textwrap::wrap;
 
 // Nous avons besoin de l'App struct pour accéder à l'état de l'application
-use crate::App;
+use crate::{App, ActivePanel};
 
 /// Dessine l'interface utilisateur de l'application.
 /// Prend un Frame de Ratatui et une référence mutable à l'état de l'application.
@@ -16,35 +17,128 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .margin(1)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
         .split(f.area());
 
-    let list_title = "Suggestions de Prompts (↑↓ pour naviguer)".to_string();
-    let list_items: Vec<ListItem> = app
-        .list_items // Utilise les items de l'application
+    // Left Panel (Table)
+    draw_left_panel(f, app, main_chunks[0]);
+
+    // Right Panel (Gemini Response)
+    draw_right_panel(f, app, main_chunks[1]);
+}
+
+fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let table_title = "Mock Bugs (↑↓ pour naviguer)".to_string();
+    let header_cells = ["Bug ID", "Date", "Title"]
         .iter()
-        .map(|i| ListItem::new(i.as_str()))
-        .collect();
+        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Red)));
+    let header = Row::new(header_cells)
+        .style(Style::default())
+        .height(1)
+        .bottom_margin(1);
 
-    let list_widget = List::new(list_items)
-        .block(Block::default().borders(Borders::ALL).title(list_title))
-        .highlight_style(
+    let rows = app.table_items.iter().map(|item| {
+        let height = 1;
+        let cells = vec![
+            Cell::from(item.bug_id.to_string()),
+            Cell::from(item.date.clone()),
+            Cell::from(item.title.clone()),
+        ];
+        Row::new(cells).height(height as u16).bottom_margin(1)
+    });
+
+    let widths = &[
+        Constraint::Percentage(10),
+        Constraint::Percentage(20),
+        Constraint::Percentage(70),
+    ];
+    let table_border_style = if let ActivePanel::Left = app.active_panel {
+        Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let table_widget = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(table_title).border_style(table_border_style))
+        .row_highlight_style(
             Style::default()
-                .fg(ratatui::style::Color::LightCyan)
+                .bg(Color::LightCyan)
+                .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">> ");
+        );
 
-    f.render_stateful_widget(list_widget, main_chunks[0], &mut app.list_state); // Utilise list_state de l'application
+    f.render_stateful_widget(table_widget, area, &mut app.table_state);
 
-    let current_display_text = app.gemini_response.lock().unwrap().clone(); // Accède à la réponse Gemini via l'application
-    let editor_instruction = " (Appuyez sur 'e' pour éditer)";
-    let mut gemini_title = "Réponse de Gemini".to_string();
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓"));
+
+    f.render_stateful_widget(
+        scrollbar,
+        area.inner(Default::default()),
+        &mut app.scrollbar_state,
+    );
+}
+
+fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let current_display_text = app.gemini_response.lock().unwrap().clone();
+    let editor_instruction = " (Appuyez sur 'e' pour éditer, 'a' pour une generation ai)";
+
+    let mut gemini_title = if let Some(index) = app.selected_bug_index {
+        if let Some(bug) = app.table_items.get(index) {
+            let truncated_title = if bug.title.chars().count() > 40 {
+                format!("{}...", bug.title.chars().take(40).collect::<String>())
+            } else {
+                bug.title.clone()
+            };
+            format!("{}-{}", bug.bug_id, truncated_title)
+        } else {
+            "Réponse de Gemini".to_string()
+        }
+    } else {
+        "Réponse de Gemini".to_string()
+    };
+
     if !current_display_text.starts_with("Chargement") {
         gemini_title.push_str(editor_instruction);
     }
-    let gemini_paragraph = Paragraph::new(current_display_text)
-        .block(Block::default().borders(Borders::ALL).title(gemini_title))
-        .wrap(ratatui::widgets::Wrap { trim: false });
-    f.render_widget(gemini_paragraph, main_chunks[1]);
+
+    let right_panel_border_style = if let ActivePanel::Right = app.active_panel {
+        Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let wrapped_text = wrap(&current_display_text, (area.width - 2) as usize);
+    let content_length = wrapped_text.len();
+    let viewport_height = (area.height.saturating_sub(2)) as usize;
+
+    if app.scroll_to_end {
+        app.right_panel_scroll = content_length.saturating_sub(viewport_height) as u16;
+        app.scroll_to_end = false;
+    }
+
+    let max_scroll = content_length.saturating_sub(viewport_height) as u16;
+    app.right_panel_scroll = app.right_panel_scroll.min(max_scroll);
+
+    let gemini_paragraph = Paragraph::new(current_display_text.as_str())
+        .block(Block::default().borders(Borders::ALL).title(gemini_title).border_style(right_panel_border_style))
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .scroll((app.right_panel_scroll, 0));
+    
+    f.render_widget(gemini_paragraph, area);
+
+    let mut right_scrollbar_state = ScrollbarState::new(content_length)
+        .position(app.right_panel_scroll as usize);
+
+    let right_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓"));
+
+    f.render_stateful_widget(
+        right_scrollbar,
+        area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 1 }),
+        &mut right_scrollbar_state,
+    );
 }
