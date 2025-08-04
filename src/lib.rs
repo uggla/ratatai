@@ -9,9 +9,9 @@ use crossterm::{
     },
 };
 use google_ai_rs::{Client, GenerativeModel};
-use ratatui::widgets::{ScrollbarState, TableState};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::widgets::{ScrollbarState, TableState};
 use std::{
     env,
     io::{Read, Write, stdout},
@@ -54,6 +54,8 @@ pub struct App {
     pub right_panel_scroll: u16,
     pub scroll_to_end: bool,
     pub gemini_response: Arc<Mutex<String>>,
+    /// Whether the spinner in the bottom bar is enabled (toggled by 's')
+    pub spinner_enabled: bool,
 }
 
 impl App {
@@ -106,6 +108,7 @@ impl App {
             gemini_response: Arc::new(Mutex::new(
                 "Chargement de la réponse de Gemini...".to_string(),
             )),
+            spinner_enabled: false,
         }
     }
 
@@ -139,6 +142,11 @@ impl App {
         };
         self.table_state.select(Some(i));
         self.scrollbar_state = self.scrollbar_state.position(i);
+    }
+
+    /// Bascule l'affichage du spinner dans la barre du bas.
+    pub fn toggle_spinner(&mut self) {
+        self.spinner_enabled = !self.spinner_enabled;
     }
 
     pub fn page_up_item(&mut self) {
@@ -226,144 +234,158 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(Duration::from_millis(100))? {
             if let CrosstermEvent::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match app.active_panel {
-                        ActivePanel::Left => match key.code {
-                            KeyCode::Char('q') => break,
-                            KeyCode::Up => app.previous_item(),
-                            KeyCode::Down => app.next_item(),
-                            KeyCode::PageUp => app.page_up_item(),
-                            KeyCode::PageDown => app.page_down_item(),
-                            KeyCode::Home => app.go_to_start(),
-                            KeyCode::End => app.go_to_end(),
-                            KeyCode::Tab => {
-                                app.active_panel = ActivePanel::Right;
-                                app.right_panel_scroll = 0;
-                            },
-                            KeyCode::Enter => {
-                                app.selected_bug_index = app.table_state.selected();
-                                if let Some(index) = app.selected_bug_index {
-                                    if let Some(bug) = app.table_items.get(index) {
-                                        let mut gemini_response = app.gemini_response.lock().unwrap();
-                                        *gemini_response = bug.description.clone();
-                                        app.right_panel_scroll = 0;
-                                        app.scroll_to_end = false;
-                                    }
+                    if key.code == KeyCode::Char('s') {
+                        app.toggle_spinner();
+                    } else {
+                        match app.active_panel {
+                            ActivePanel::Left => match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Up => app.previous_item(),
+                                KeyCode::Down => app.next_item(),
+                                KeyCode::PageUp => app.page_up_item(),
+                                KeyCode::PageDown => app.page_down_item(),
+                                KeyCode::Home => app.go_to_start(),
+                                KeyCode::End => app.go_to_end(),
+                                KeyCode::Tab => {
+                                    app.active_panel = ActivePanel::Right;
+                                    app.right_panel_scroll = 0;
                                 }
-                            }
-                            _ => {}
-                        },
-                        ActivePanel::Right => match key.code {
-                            KeyCode::Char('q') => break,
-                            KeyCode::Up => {
-                                app.right_panel_scroll = app.right_panel_scroll.saturating_sub(1);
-                                app.scroll_to_end = false;
-                            },
-                            KeyCode::Down => {
-                                app.right_panel_scroll = app.right_panel_scroll.saturating_add(1);
-                                app.scroll_to_end = false;
-                            },
-                            KeyCode::PageUp => {
-                                app.right_panel_scroll = app.right_panel_scroll.saturating_sub(10);
-                                app.scroll_to_end = false;
-                            },
-                            KeyCode::PageDown => {
-                                app.right_panel_scroll = app.right_panel_scroll.saturating_add(10);
-                                app.scroll_to_end = false;
-                            },
-                            KeyCode::Home => {
-                                app.right_panel_scroll = 0;
-                                app.scroll_to_end = false;
-                            },
-                            KeyCode::End => {
-                                app.scroll_to_end = true;
-                            },
-                            KeyCode::Tab => app.active_panel = ActivePanel::Left,
-                            KeyCode::Char('a') => {
-                                let client_for_spawn = Arc::clone(&client);
-                                let gemini_response_text_for_spawn =
-                                    Arc::clone(&app.gemini_response);
-                                let prompt = {
-                                    let truc = gemini_response_text_for_spawn.lock().unwrap();
-                                    truc.clone()
-                                };
-
-                                tokio::spawn(async move {
-                                    let model = GenerativeModel::new(
-                                        &client_for_spawn,
-                                        "gemini-2.5-flash",
-                                    );
-
-                                    match get_gemini_response(model, prompt).await {
-                                        Ok(response) => {
-                                            let mut response_guard =
-                                                gemini_response_text_for_spawn.lock().unwrap();
-                                            *response_guard = response.text();
-                                        }
-                                        Err(e) => {
-                                            let mut response_guard =
-                                                gemini_response_text_for_spawn.lock().unwrap();
-                                            *response_guard = format!(
-                                                "Erreur lors de la récupération de la réponse: {e}"
-                                            );
+                                KeyCode::Enter => {
+                                    app.selected_bug_index = app.table_state.selected();
+                                    if let Some(index) = app.selected_bug_index {
+                                        if let Some(bug) = app.table_items.get(index) {
+                                            let mut gemini_response =
+                                                app.gemini_response.lock().unwrap();
+                                            *gemini_response = bug.description.clone();
+                                            app.right_panel_scroll = 0;
+                                            app.scroll_to_end = false;
                                         }
                                     }
-                                });
-                                // Ai request
-                            }
-                            KeyCode::Char('e') => {
-                                // Éditer le contenu
-                                let content_to_edit = app.gemini_response.lock().unwrap().clone();
-
-                                let mut temp_file = NamedTempFile::new()?;
-                                temp_file.write_all(content_to_edit.as_bytes())?;
-                                let file_path = temp_file.path().to_path_buf();
-
-                                // 1. Quitter le mode Ratatui
-                                terminal.show_cursor()?;
-                                execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-                                disable_raw_mode()?;
-
-                                // 2. Lancer l'éditeur externe
-                                let editor =
-                                    env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
-                                let status = Command::new(&editor).arg(&file_path).status()?;
-
-                                if !status.success() {
-                                    eprintln!(
-                                        "L'éditeur a quitté avec une erreur : {:?}",
-                                        status.code()
-                                    );
                                 }
-
-                                // 3. Réactiver le mode Ratatui
-                                enable_raw_mode()?;
-                                execute!(stdout(), Clear(ClearType::All), EnterAlternateScreen)?;
-
-                                // Lire le contenu mis à jour du fichier temporaire
-                                let mut updated_content = String::new();
-                                std::fs::File::open(&file_path)?
-                                    .read_to_string(&mut updated_content)?;
-                                {
-                                    // Met à jour l'état de l'application avec le nouveau contenu
-                                    let mut response_guard = app.gemini_response.lock().unwrap();
-                                    *response_guard = updated_content;
+                                _ => {}
+                            },
+                            ActivePanel::Right => match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Up => {
+                                    app.right_panel_scroll =
+                                        app.right_panel_scroll.saturating_sub(1);
+                                    app.scroll_to_end = false;
                                 }
+                                KeyCode::Down => {
+                                    app.right_panel_scroll =
+                                        app.right_panel_scroll.saturating_add(1);
+                                    app.scroll_to_end = false;
+                                }
+                                KeyCode::PageUp => {
+                                    app.right_panel_scroll =
+                                        app.right_panel_scroll.saturating_sub(10);
+                                    app.scroll_to_end = false;
+                                }
+                                KeyCode::PageDown => {
+                                    app.right_panel_scroll =
+                                        app.right_panel_scroll.saturating_add(10);
+                                    app.scroll_to_end = false;
+                                }
+                                KeyCode::Home => {
+                                    app.right_panel_scroll = 0;
+                                    app.scroll_to_end = false;
+                                }
+                                KeyCode::End => {
+                                    app.scroll_to_end = true;
+                                }
+                                KeyCode::Tab => app.active_panel = ActivePanel::Left,
+                                KeyCode::Char('a') => {
+                                    let client_for_spawn = Arc::clone(&client);
+                                    let gemini_response_text_for_spawn =
+                                        Arc::clone(&app.gemini_response);
+                                    let prompt = {
+                                        let truc = gemini_response_text_for_spawn.lock().unwrap();
+                                        truc.clone()
+                                    };
 
-                                // Forcer un nettoyage et un redessin complet de la TUI
-                                terminal.clear()?;
-                                terminal.draw(|f| draw_ui(f, &mut app))?; // Redessine avec le nouveau contenu
-                                terminal.backend_mut().flush()?;
-                                terminal.hide_cursor()?;
-                            }
-                            _ => {}
-                        },
+                                    tokio::spawn(async move {
+                                        let model = GenerativeModel::new(
+                                            &client_for_spawn,
+                                            "gemini-2.5-flash",
+                                        );
+
+                                        match get_gemini_response(model, prompt).await {
+                                            Ok(response) => {
+                                                let mut response_guard =
+                                                    gemini_response_text_for_spawn.lock().unwrap();
+                                                *response_guard = response.text();
+                                            }
+                                            Err(e) => {
+                                                let mut response_guard =
+                                                    gemini_response_text_for_spawn.lock().unwrap();
+                                                *response_guard = format!(
+                                                    "Erreur lors de la récupération de la réponse: {e}"
+                                                );
+                                            }
+                                        }
+                                    });
+                                    // Ai request
+                                }
+                                KeyCode::Char('e') => {
+                                    // Éditer le contenu
+                                    let content_to_edit =
+                                        app.gemini_response.lock().unwrap().clone();
+
+                                    let mut temp_file = NamedTempFile::new()?;
+                                    temp_file.write_all(content_to_edit.as_bytes())?;
+                                    let file_path = temp_file.path().to_path_buf();
+
+                                    // 1. Quitter le mode Ratatui
+                                    terminal.show_cursor()?;
+                                    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                                    disable_raw_mode()?;
+
+                                    // 2. Lancer l'éditeur externe
+                                    let editor =
+                                        env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                                    let status = Command::new(&editor).arg(&file_path).status()?;
+
+                                    if !status.success() {
+                                        eprintln!(
+                                            "L'éditeur a quitté avec une erreur : {:?}",
+                                            status.code()
+                                        );
+                                    }
+
+                                    // 3. Réactiver le mode Ratatui
+                                    enable_raw_mode()?;
+                                    execute!(
+                                        stdout(),
+                                        Clear(ClearType::All),
+                                        EnterAlternateScreen
+                                    )?;
+
+                                    // Lire le contenu mis à jour du fichier temporaire
+                                    let mut updated_content = String::new();
+                                    std::fs::File::open(&file_path)?
+                                        .read_to_string(&mut updated_content)?;
+                                    {
+                                        // Met à jour l'état de l'application avec le nouveau contenu
+                                        let mut response_guard =
+                                            app.gemini_response.lock().unwrap();
+                                        *response_guard = updated_content;
+                                    }
+
+                                    // Forcer un nettoyage et un redessin complet de la TUI
+                                    terminal.clear()?;
+                                    terminal.draw(|f| draw_ui(f, &mut app))?; // Redessine avec le nouveau contenu
+                                    terminal.backend_mut().flush()?;
+                                    terminal.hide_cursor()?;
+                                }
+                                _ => {}
+                            },
+                        }
                     }
                 }
             }
+            sleep(Duration::from_millis(50)).await;
         }
-        sleep(Duration::from_millis(50)).await;
     }
-
     // Nettoyage final avant de quitter
     disable_raw_mode()?;
     execute!(stdout(), LeaveAlternateScreen)?;

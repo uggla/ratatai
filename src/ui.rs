@@ -2,29 +2,70 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style, Color},
-    widgets::{Block, Borders, Paragraph, Row, Cell, Table, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    widgets::{
+        Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table,
+    },
 };
 use textwrap::wrap;
 
 // Nous avons besoin de l'App struct pour accéder à l'état de l'application
-use crate::{App, ActivePanel};
+use crate::{ActivePanel, App};
+use chrono::Local;
+use throbber_widgets_tui::Throbber;
 
 /// Dessine l'interface utilisateur de l'application.
 /// Prend un Frame de Ratatui et une référence mutable à l'état de l'application.
 pub fn draw_ui(f: &mut Frame, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
+        .split(f.area());
+
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .margin(1)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(f.area());
+        .split(chunks[0]);
 
     // Left Panel (Table)
     draw_left_panel(f, app, main_chunks[0]);
 
     // Right Panel (Gemini Response)
     draw_right_panel(f, app, main_chunks[1]);
+
+    // Bottom Status Panel (for spinner and time)
+    draw_bottom_panel(f, app, chunks[1]);
+}
+
+/// Dessine le panneau inférieur pour le spinner et le temps.
+fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let time_str = Local::now().format("%H:%M:%S").to_string();
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Min(0),
+                Constraint::Length(time_str.len() as u16),
+            ]
+            .as_ref(),
+        )
+        .split(area);
+
+    // Left sub-panel: spinner with throbber and label styled separately
+    if app.spinner_enabled {
+        let spinner = Throbber::default()
+            .throbber_style(Style::default().fg(Color::Magenta))
+            .label("Chargement")
+            .style(Style::default().fg(Color::Cyan));
+        f.render_widget(spinner, chunks[0]);
+    }
+
+    // Right sub-panel with current time at bottom-right
+    let time_paragraph = Paragraph::new(time_str).alignment(Alignment::Right);
+    f.render_widget(time_paragraph, chunks[1]);
 }
 
 fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
@@ -60,7 +101,12 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table_widget = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(table_title).border_style(table_border_style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(table_title)
+                .border_style(table_border_style),
+        )
         .row_highlight_style(
             Style::default()
                 .bg(Color::LightCyan)
@@ -123,14 +169,19 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
     app.right_panel_scroll = app.right_panel_scroll.min(max_scroll);
 
     let gemini_paragraph = Paragraph::new(current_display_text.as_str())
-        .block(Block::default().borders(Borders::ALL).title(gemini_title).border_style(right_panel_border_style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(gemini_title)
+                .border_style(right_panel_border_style),
+        )
         .wrap(ratatui::widgets::Wrap { trim: true })
         .scroll((app.right_panel_scroll, 0));
-    
+
     f.render_widget(gemini_paragraph, area);
 
-    let mut right_scrollbar_state = ScrollbarState::new(content_length)
-        .position(app.right_panel_scroll as usize);
+    let mut right_scrollbar_state =
+        ScrollbarState::new(content_length).position(app.right_panel_scroll as usize);
 
     let right_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
@@ -138,7 +189,10 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_stateful_widget(
         right_scrollbar,
-        area.inner(ratatui::layout::Margin { vertical: 1, horizontal: 1 }),
+        area.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 1,
+        }),
         &mut right_scrollbar_state,
     );
 }
