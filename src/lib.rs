@@ -33,10 +33,14 @@ use crate::ai::get_gemini_response;
 use throbber_widgets_tui::ThrobberState;
 use ui::SPINNER_LABELS;
 
+pub enum Screen {
+    BugList,
+    BugEditing,
+}
+
 pub enum ActivePanel {
     Left,
     Right,
-    Split,
 }
 
 /// Represents a row in our "bugs" table
@@ -54,6 +58,7 @@ pub struct App {
     pub scrollbar_state: ScrollbarState,
     pub selected_bug_index: Option<usize>,
     pub active_panel: ActivePanel,
+    pub current_screen: Screen,
     pub right_panel_scroll: u16,
     pub scroll_to_end: bool,
     pub gemini_response: Arc<Mutex<String>>,
@@ -110,11 +115,10 @@ impl App {
             scrollbar_state,
             selected_bug_index: None,
             active_panel: ActivePanel::Left,
+            current_screen: Screen::BugList,
             right_panel_scroll: 0,
             scroll_to_end: false,
-            gemini_response: Arc::new(Mutex::new(
-                "Loading response from Gemini...".to_string(),
-            )),
+            gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
             spinner_label_index: 0,
@@ -242,12 +246,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
         // Handle input events
-        if event::poll(Duration::from_millis(100))? {
+        if event::poll(Duration::from_millis(64))? {
             if let CrosstermEvent::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     if key.code == KeyCode::Char('s') {
                         app.toggle_spinner();
                     } else {
+                        match app.current_screen {
+                            Screen::BugEditing => match key.code {
+                                KeyCode::Esc => {
+                                    app.current_screen = Screen::BugList;
+                                    app.active_panel = ActivePanel::Right;
+                                }
+                                _ => {}
+                            },
+                            _ => {}
+                        }
                         match app.active_panel {
                             ActivePanel::Left => match key.code {
                                 KeyCode::Char('q') => break,
@@ -272,16 +286,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                             app.scroll_to_end = false;
                                         }
                                     }
-                                }
-                                _ => {}
-                            },
-                            ActivePanel::Split => match key.code {
-                                KeyCode::Char('q') => break,
-                                KeyCode::Esc => {
-                                    app.active_panel = ActivePanel::Right;
-                                }
-                                KeyCode::Tab => {
-                                    app.active_panel = ActivePanel::Left;
                                 }
                                 _ => {}
                             },
@@ -315,7 +319,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     app.scroll_to_end = true;
                                 }
                                 KeyCode::Char('r') => {
-                                    app.active_panel = ActivePanel::Split;
+                                    app.current_screen = Screen::BugEditing;
+                                    app.active_panel = ActivePanel::Left;
                                 }
                                 KeyCode::Tab => app.active_panel = ActivePanel::Left,
                                 KeyCode::Char('a') => {
@@ -407,7 +412,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            sleep(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(32)).await;
         }
     }
     // Final cleanup before exiting
