@@ -1,5 +1,6 @@
 // src/app.rs
 
+use google_ai_rs::Client;
 use ratatui::widgets::{ScrollbarState, TableState};
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
@@ -34,6 +35,7 @@ pub struct App {
     pub current_screen: Screen,
     pub right_panel_scroll: u16,
     pub scroll_to_end: bool,
+    pub gemini_client: Arc<Client>,
     pub gemini_response: Arc<Mutex<String>>,
     /// Whether the spinner in the bottom bar is enabled (toggled by 's')
     pub spinner_enabled: bool,
@@ -45,7 +47,7 @@ pub struct App {
 
 impl App {
     /// Creates a new instance of the application with the initial state.
-    pub fn new() -> App {
+    pub fn new(gemini_client: Client) -> App {
         let items = vec![
             Bug { bug_id: 1, date: "2025-08-01".to_string(), title: "Fix UI glitch on main screen".to_string(), description: "The main screen UI flickers when resizing the window. This seems to be related to the new rendering engine. We need to investigate the cause and apply a fix. The issue is most noticeable on high-resolution displays.".to_string() },
             Bug { bug_id: 2, date: "2025-08-02".to_string(), title: "Add support for new API endpoint".to_string(), description: "The application needs to integrate with the new 'v2/users' API endpoint. This involves creating a new service, updating the data models, and ensuring backward compatibility with the old endpoint.".to_string() },
@@ -91,6 +93,7 @@ impl App {
             current_screen: Screen::BugList,
             right_panel_scroll: 0,
             scroll_to_end: false,
+            gemini_client: Arc::new(gemini_client),
             gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
@@ -164,11 +167,5 @@ impl App {
         let i = self.table_items.len() - 1;
         self.table_state.select(Some(i));
         self.scrollbar_state = self.scrollbar_state.position(i);
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
     }
 }
