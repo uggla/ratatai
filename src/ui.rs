@@ -12,9 +12,10 @@ use ratatui::{
 use textwrap::wrap;
 
 // We need the App struct to access the application state
-use crate::{ActivePanel, App, Screen};
 use chrono::Local;
 use throbber_widgets_tui::Throbber;
+
+use crate::app::{ActivePanel, App, Screen};
 
 /// Playful labels for the spinner, cycled with each 's' key press
 pub const SPINNER_LABELS: [&str; 5] = [
