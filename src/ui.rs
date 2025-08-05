@@ -97,10 +97,10 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
             }
         },
         Screen::BugEditing => match app.active_panel {
-            ActivePanel::Left => "tbd",
-            ActivePanel::Right => {
+            ActivePanel::Left => {
                 "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'a' for AI generation, 'r' to reply to this bug"
             }
+            ActivePanel::Right => "tbd",
         },
     };
     let command_paragraph = Paragraph::new(command_text)
@@ -198,9 +198,15 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
         // gemini_title.push_str(editor_instruction);
     }
 
-    let right_panel_border_style = match app.active_panel {
-        ActivePanel::Right => Style::default().fg(Color::Green),
-        _ => Style::default().fg(Color::White),
+    let right_panel_border_style = match app.current_screen {
+        Screen::BugList => match app.active_panel {
+            ActivePanel::Right => Style::default().fg(Color::Green),
+            _ => Style::default().fg(Color::White),
+        },
+        Screen::BugEditing => match app.active_panel {
+            ActivePanel::Left => Style::default().fg(Color::Green),
+            _ => Style::default().fg(Color::White),
+        },
     };
 
     let wrapped_text = wrap(&current_display_text, (area.width - 2) as usize);
@@ -253,7 +259,7 @@ fn draw_bug_reply(f: &mut Frame, app: &mut App, area: Rect) {
                 .borders(Borders::ALL)
                 .title("Lorem Ipsum")
                 .border_style(match app.active_panel {
-                    ActivePanel::Left => Style::default().fg(Color::Green),
+                    ActivePanel::Right => Style::default().fg(Color::Green),
                     _ => Style::default().fg(Color::White),
                 }),
         )

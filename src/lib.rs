@@ -253,14 +253,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         app.toggle_spinner();
                     } else {
                         match app.current_screen {
+                            Screen::BugList => {}
                             Screen::BugEditing => match key.code {
                                 KeyCode::Esc => {
                                     app.current_screen = Screen::BugList;
                                     app.active_panel = ActivePanel::Right;
                                 }
+                                // TODO: Remove this as this is just for satisfy the linter
+                                KeyCode::Char('z') => {}
                                 _ => {}
                             },
-                            _ => {}
                         }
                         match app.active_panel {
                             ActivePanel::Left => match key.code {
