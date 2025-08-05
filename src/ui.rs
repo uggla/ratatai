@@ -34,16 +34,29 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
         .split(f.area());
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(chunks[0]);
+    match app.active_panel {
+        ActivePanel::Split => {
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(chunks[0]);
 
-    // Left Panel (Table)
-    draw_left_panel(f, app, main_chunks[0]);
+            draw_right_panel(f, app, main_chunks[0]);
+            draw_lorem_panel(f, app, main_chunks[1]);
+        }
+        _ => {
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(chunks[0]);
 
-    // Right Panel (Gemini Response)
-    draw_right_panel(f, app, main_chunks[1]);
+            // Left Panel (Table)
+            draw_left_panel(f, app, main_chunks[0]);
+
+            // Right Panel (Gemini Response)
+            draw_right_panel(f, app, main_chunks[1]);
+        }
+    }
 
     // Bottom Status Panel (for spinner and time)
     draw_bottom_panel(f, app, chunks[1]);
@@ -160,10 +173,9 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
         gemini_title.push_str(editor_instruction);
     }
 
-    let right_panel_border_style = if let ActivePanel::Right = app.active_panel {
-        Style::default().fg(Color::Green)
-    } else {
-        Style::default().fg(Color::White)
+    let right_panel_border_style = match app.active_panel {
+        ActivePanel::Right => Style::default().fg(Color::Green),
+        _ => Style::default().fg(Color::White),
     };
 
     let wrapped_text = wrap(&current_display_text, (area.width - 2) as usize);
@@ -205,4 +217,22 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
         }),
         &mut right_scrollbar_state,
     );
+}
+
+fn draw_lorem_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let lorem_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+
+    let lorem_paragraph = Paragraph::new(lorem_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Lorem Ipsum")
+                .border_style(match app.active_panel {
+                    ActivePanel::Split => Style::default().fg(Color::Green),
+                    _ => Style::default().fg(Color::White),
+                }),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    f.render_widget(lorem_paragraph, area);
 }

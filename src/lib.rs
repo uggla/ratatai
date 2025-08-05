@@ -36,6 +36,7 @@ use ui::SPINNER_LABELS;
 pub enum ActivePanel {
     Left,
     Right,
+    Split,
 }
 
 /// Représente une ligne dans notre table de "bugs"
@@ -274,6 +275,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 _ => {}
                             },
+                            ActivePanel::Split => match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Esc => {
+                                    app.active_panel = ActivePanel::Right;
+                                }
+                                KeyCode::Tab => {
+                                    app.active_panel = ActivePanel::Left;
+                                }
+                                _ => {}
+                            },
                             ActivePanel::Right => match key.code {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Up => {
@@ -302,6 +313,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 KeyCode::End => {
                                     app.scroll_to_end = true;
+                                }
+                                KeyCode::Char('r') => {
+                                    app.active_panel = ActivePanel::Split;
                                 }
                                 KeyCode::Tab => app.active_panel = ActivePanel::Left,
                                 KeyCode::Char('a') => {
