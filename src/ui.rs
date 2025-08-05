@@ -14,7 +14,7 @@ use textwrap::wrap;
 // Nous avons besoin de l'App struct pour accéder à l'état de l'application
 use crate::{ActivePanel, App};
 use chrono::Local;
-use throbber_widgets_tui::{Throbber, ThrobberState};
+use throbber_widgets_tui::{Throbber};
 
 /// Labels ludiques pour le spinner, cyclés à chaque appui sur 's'
 pub const SPINNER_LABELS: [&str; 5] = [
@@ -201,7 +201,7 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
         right_scrollbar,
         area.inner(ratatui::layout::Margin {
             vertical: 1,
-            horizontal: 1,
+            horizontal: 0,
         }),
         &mut right_scrollbar_state,
     );
