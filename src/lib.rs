@@ -30,6 +30,8 @@ use ai::get_gemini_response_static;
 use ui::draw_ui;
 
 use crate::ai::get_gemini_response;
+use throbber_widgets_tui::ThrobberState;
+use ui::SPINNER_LABELS;
 
 pub enum ActivePanel {
     Left,
@@ -56,6 +58,10 @@ pub struct App {
     pub gemini_response: Arc<Mutex<String>>,
     /// Whether the spinner in the bottom bar is enabled (toggled by 's')
     pub spinner_enabled: bool,
+    /// Stateful state for spinner animation
+    pub spinner_state: ThrobberState,
+    /// Index courant pour le label de spinner dans SPINNER_LABELS
+    pub spinner_label_index: usize,
 }
 
 impl App {
@@ -109,6 +115,8 @@ impl App {
                 "Chargement de la réponse de Gemini...".to_string(),
             )),
             spinner_enabled: false,
+            spinner_state: ThrobberState::default(),
+            spinner_label_index: 0,
         }
     }
 
@@ -147,6 +155,8 @@ impl App {
     /// Bascule l'affichage du spinner dans la barre du bas.
     pub fn toggle_spinner(&mut self) {
         self.spinner_enabled = !self.spinner_enabled;
+        // Change le label à chaque activation 's'
+        self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
     }
 
     pub fn page_up_item(&mut self) {

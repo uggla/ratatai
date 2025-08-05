@@ -14,7 +14,16 @@ use textwrap::wrap;
 // Nous avons besoin de l'App struct pour accéder à l'état de l'application
 use crate::{ActivePanel, App};
 use chrono::Local;
-use throbber_widgets_tui::Throbber;
+use throbber_widgets_tui::{Throbber, ThrobberState};
+
+/// Labels ludiques pour le spinner, cyclés à chaque appui sur 's'
+pub const SPINNER_LABELS: [&str; 5] = [
+    "Chargement",
+    "Patience, jeune padawan...",
+    "Ne clignez pas des yeux",
+    "Tripatouillage...",
+    "Café time",
+];
 
 /// Dessine l'interface utilisateur de l'application.
 /// Prend un Frame de Ratatui et une référence mutable à l'état de l'application.
@@ -56,12 +65,13 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Left sub-panel: spinner with throbber and label styled separately
     if app.spinner_enabled {
-        let spinner = Throbber::default()
-            .throbber_style(Style::default().fg(Color::Magenta))
-            .label("Chargement")
-            .style(Style::default().fg(Color::Cyan));
-        f.render_widget(spinner, chunks[0]);
+        app.spinner_state.calc_next();
     }
+    let spinner = Throbber::default()
+        .throbber_style(Style::default().fg(Color::Magenta))
+        .label(SPINNER_LABELS[app.spinner_label_index])
+        .style(Style::default().fg(Color::Cyan));
+    f.render_stateful_widget(spinner, chunks[0], &mut app.spinner_state);
 
     // Right sub-panel with current time at bottom-right
     let time_paragraph = Paragraph::new(time_str).alignment(Alignment::Right);
