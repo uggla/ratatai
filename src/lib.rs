@@ -22,7 +22,7 @@ use std::{
 use tempfile::NamedTempFile;
 use tokio::time::sleep;
 
-// Importe les modules que nous allons créer
+// Import the modules we are going to create
 mod ai;
 mod ui;
 
@@ -39,7 +39,7 @@ pub enum ActivePanel {
     Split,
 }
 
-/// Représente une ligne dans notre table de "bugs"
+/// Represents a row in our "bugs" table
 pub struct Bug {
     pub bug_id: u32,
     pub date: String,
@@ -47,7 +47,7 @@ pub struct Bug {
     pub description: String,
 }
 
-/// Représente l'état de l'application TUI.
+/// Represents the state of the TUI application.
 pub struct App {
     pub table_items: Vec<Bug>,
     pub table_state: TableState,
@@ -61,12 +61,12 @@ pub struct App {
     pub spinner_enabled: bool,
     /// Stateful state for spinner animation
     pub spinner_state: ThrobberState,
-    /// Index courant pour le label de spinner dans SPINNER_LABELS
+    /// Current index for the spinner label in SPINNER_LABELS
     pub spinner_label_index: usize,
 }
 
 impl App {
-    /// Crée une nouvelle instance de l'application avec l'état initial.
+    /// Creates a new instance of the application with the initial state.
     pub fn new() -> App {
         let items = vec![
             Bug { bug_id: 1, date: "2025-08-01".to_string(), title: "Fix UI glitch on main screen".to_string(), description: "The main screen UI flickers when resizing the window. This seems to be related to the new rendering engine. We need to investigate the cause and apply a fix. The issue is most noticeable on high-resolution displays.".to_string() },
@@ -101,7 +101,7 @@ impl App {
             Bug { bug_id: 30, date: "2025-08-30".to_string(), title: "Security vulnerability in the login form".to_string(), description: "The login form is vulnerable to SQL injection. We need to update the code to use parameterized queries to prevent this vulnerability.".to_string() },
         ];
         let mut table_state = TableState::default();
-        table_state.select(Some(0)); // Sélectionne la première ligne par défaut
+        table_state.select(Some(0)); // Selects the first row by default
         let scrollbar_state = ScrollbarState::new(items.len());
 
         App {
@@ -113,7 +113,7 @@ impl App {
             right_panel_scroll: 0,
             scroll_to_end: false,
             gemini_response: Arc::new(Mutex::new(
-                "Chargement de la réponse de Gemini...".to_string(),
+                "Loading response from Gemini...".to_string(),
             )),
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
@@ -121,7 +121,7 @@ impl App {
         }
     }
 
-    /// Déplace la sélection vers le haut dans la table.
+    /// Moves the selection up in the table.
     pub fn previous_item(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
@@ -137,7 +137,7 @@ impl App {
         self.scrollbar_state = self.scrollbar_state.position(i);
     }
 
-    /// Déplace la sélection vers le bas dans la table.
+    /// Moves the selection down in the table.
     pub fn next_item(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
@@ -153,10 +153,10 @@ impl App {
         self.scrollbar_state = self.scrollbar_state.position(i);
     }
 
-    /// Bascule l'affichage du spinner dans la barre du bas.
+    /// Toggles the spinner display in the bottom bar.
     pub fn toggle_spinner(&mut self) {
         self.spinner_enabled = !self.spinner_enabled;
-        // Change le label à chaque activation 's'
+        // Change the label with each 's' activation
         self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
     }
 
@@ -196,16 +196,16 @@ impl Default for App {
     }
 }
 
-/// Fonction principale de l'application TUI.
+/// Main function of the TUI application.
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
-    // La clé API n'est plus strictement nécessaire pour le moment, mais on la garde pour plus tard.
+    // The API key is not strictly necessary at the moment, but we keep it for later.
     let api_key = std::env::var("GOOGLE_API_KEY")
         .expect("GOOGLE_API_KEY not set in .env file or environment variables");
 
     let client = Arc::new(Client::new(api_key.into()).await?);
 
-    // Initialisation du terminal Crossterm et Ratatui
+    // Initialize Crossterm and Ratatui terminal
     enable_raw_mode()?;
     execute!(stdout(), Clear(ClearType::All))?;
     execute!(stdout(), EnterAlternateScreen)?;
@@ -213,12 +213,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.hide_cursor()?;
 
-    // Crée une nouvelle instance de notre application
+    // Create a new instance of our application
     let mut app = App::new();
     // let client_for_spawn = Arc::clone(&client);
     let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
 
-    // Lance la tâche asynchrone pour la "réponse Gemini" (statique pour l'instant)
+    // Start the asynchronous task for the "Gemini response" (static for now)
     tokio::spawn(async move {
         // let model = GenerativeModel::new(&client_for_spawn, "gemini-2.5-flash");
         // match get_gemini_response(model).await {
@@ -231,17 +231,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(e) => {
                 let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                *response_guard = format!("Erreur lors de la récupération de la réponse: {e}");
+                *response_guard = format!("Error while fetching the response: {e}");
             }
         }
     });
 
-    // Boucle principale de l'application
+    // Main application loop
     loop {
-        // Dessine l'interface utilisateur en passant la référence à l'objet app
+        // Draw the user interface by passing the reference to the app object
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
-        // Gère les événements d'entrée
+        // Handle input events
         if event::poll(Duration::from_millis(100))? {
             if let CrosstermEvent::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -343,7 +343,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                                 let mut response_guard =
                                                     gemini_response_text_for_spawn.lock().unwrap();
                                                 *response_guard = format!(
-                                                    "Erreur lors de la récupération de la réponse: {e}"
+                                                    "Error while fetching the response: {e}"
                                                 );
                                             }
                                         }
@@ -351,7 +351,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     // Ai request
                                 }
                                 KeyCode::Char('e') => {
-                                    // Éditer le contenu
+                                    // Edit the content
                                     let content_to_edit =
                                         app.gemini_response.lock().unwrap().clone();
 
@@ -359,24 +359,24 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     temp_file.write_all(content_to_edit.as_bytes())?;
                                     let file_path = temp_file.path().to_path_buf();
 
-                                    // 1. Quitter le mode Ratatui
+                                    // 1. Exit Ratatui mode
                                     terminal.show_cursor()?;
                                     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
                                     disable_raw_mode()?;
 
-                                    // 2. Lancer l'éditeur externe
+                                    // 2. Launch the external editor
                                     let editor =
                                         env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
                                     let status = Command::new(&editor).arg(&file_path).status()?;
 
                                     if !status.success() {
                                         eprintln!(
-                                            "L'éditeur a quitté avec une erreur : {:?}",
+                                            "The editor exited with an error: {:?}",
                                             status.code()
                                         );
                                     }
 
-                                    // 3. Réactiver le mode Ratatui
+                                    // 3. Re-enable Ratatui mode
                                     enable_raw_mode()?;
                                     execute!(
                                         stdout(),
@@ -384,20 +384,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                                         EnterAlternateScreen
                                     )?;
 
-                                    // Lire le contenu mis à jour du fichier temporaire
+                                    // Read the updated content from the temporary file
                                     let mut updated_content = String::new();
                                     std::fs::File::open(&file_path)?
                                         .read_to_string(&mut updated_content)?;
                                     {
-                                        // Met à jour l'état de l'application avec le nouveau contenu
+                                        // Update the application state with the new content
                                         let mut response_guard =
                                             app.gemini_response.lock().unwrap();
                                         *response_guard = updated_content;
                                     }
 
-                                    // Forcer un nettoyage et un redessin complet de la TUI
+                                    // Force a full cleanup and redraw of the TUI
                                     terminal.clear()?;
-                                    terminal.draw(|f| draw_ui(f, &mut app))?; // Redessine avec le nouveau contenu
+                                    terminal.draw(|f| draw_ui(f, &mut app))?; // Redraw with the new content
                                     terminal.backend_mut().flush()?;
                                     terminal.hide_cursor()?;
                                 }
@@ -410,7 +410,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(50)).await;
         }
     }
-    // Nettoyage final avant de quitter
+    // Final cleanup before exiting
     disable_raw_mode()?;
     execute!(stdout(), LeaveAlternateScreen)?;
     stdout().flush()?;

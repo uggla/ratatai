@@ -11,22 +11,22 @@ use ratatui::{
 };
 use textwrap::wrap;
 
-// Nous avons besoin de l'App struct pour accéder à l'état de l'application
+// We need the App struct to access the application state
 use crate::{ActivePanel, App};
 use chrono::Local;
 use throbber_widgets_tui::{Throbber};
 
-/// Labels ludiques pour le spinner, cyclés à chaque appui sur 's'
+/// Playful labels for the spinner, cycled with each 's' key press
 pub const SPINNER_LABELS: [&str; 5] = [
-    "Chargement",
-    "Patience, jeune padawan...",
-    "Ne clignez pas des yeux",
-    "Tripatouillage...",
-    "Café time",
+    "Loading",
+    "Patience, young padawan...",
+    "Don't blink",
+    "Tinkering...",
+    "Coffee time",
 ];
 
-/// Dessine l'interface utilisateur de l'application.
-/// Prend un Frame de Ratatui et une référence mutable à l'état de l'application.
+/// Draws the application's user interface.
+/// Takes a Ratatui Frame and a mutable reference to the application state.
 pub fn draw_ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -62,7 +62,7 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
     draw_bottom_panel(f, app, chunks[1]);
 }
 
-/// Dessine le panneau inférieur pour le spinner et le temps.
+/// Draws the bottom panel for the spinner and time.
 fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let time_str = Local::now().format("%H:%M:%S").to_string();
     let chunks = Layout::default()
@@ -92,7 +92,7 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
-    let table_title = "Mock Bugs (↑↓ pour naviguer)".to_string();
+    let table_title = "Mock Bugs (↑↓ to navigate)".to_string();
     let header_cells = ["Bug ID", "Date", "Title"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Red)));
@@ -152,7 +152,7 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let current_display_text = app.gemini_response.lock().unwrap().clone();
-    let editor_instruction = " (Appuyez sur 'e' pour éditer, 'a' pour une generation ai)";
+    let editor_instruction = " (Press 'e' to edit, 'a' for AI generation)";
 
     let mut gemini_title = if let Some(index) = app.selected_bug_index {
         if let Some(bug) = app.table_items.get(index) {
@@ -163,13 +163,13 @@ fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
             };
             format!("{}-{}", bug.bug_id, truncated_title)
         } else {
-            "Réponse de Gemini".to_string()
+            "Gemini Response".to_string()
         }
     } else {
-        "Réponse de Gemini".to_string()
+        "Gemini Response".to_string()
     };
 
-    if !current_display_text.starts_with("Chargement") {
+    if !current_display_text.starts_with("Loading") {
         gemini_title.push_str(editor_instruction);
     }
 

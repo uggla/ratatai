@@ -1,11 +1,11 @@
 // src/main.rs
 
-// Importe tout ce qui est public de notre crate 'tui_app' (qui sera défini dans lib.rs)
+// Import everything public from our 'tui_app' crate (which will be defined in lib.rs)
 use ratatai::run;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Appelle la fonction principale de notre application définie dans lib.rs
+    // Call the main function of our application defined in lib.rs
     run().await?;
     Ok(())
 }
