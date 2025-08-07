@@ -27,14 +27,14 @@ pub struct Bug {
 
 /// Represents the state of the TUI application.
 pub struct App {
-    pub table_items: Vec<Bug>,
-    pub table_state: TableState,
-    pub scrollbar_state: ScrollbarState,
-    pub selected_bug_index: Option<usize>,
+    pub bug_table_items: Vec<Bug>,
+    pub bug_table_state: TableState,
+    pub bug_table_scrollbar_state: ScrollbarState,
+    pub bug_table_selected_index: Option<usize>,
     pub active_panel: ActivePanel,
     pub current_screen: Screen,
-    pub right_panel_scroll: u16,
-    pub scroll_to_end: bool,
+    pub bug_desc_scroll: u16,
+    pub bug_desc_scroll_to_end: bool,
     pub gemini_client: Arc<Client>,
     pub gemini_response: Arc<Mutex<String>>,
     /// Whether the spinner in the bottom bar is enabled (toggled by 's')
@@ -85,14 +85,14 @@ impl App {
         let scrollbar_state = ScrollbarState::new(items.len());
 
         App {
-            table_items: items,
-            table_state,
-            scrollbar_state,
-            selected_bug_index: None,
+            bug_table_items: items,
+            bug_table_state: table_state,
+            bug_table_scrollbar_state: scrollbar_state,
+            bug_table_selected_index: None,
             active_panel: ActivePanel::Left,
             current_screen: Screen::BugList,
-            right_panel_scroll: 0,
-            scroll_to_end: false,
+            bug_desc_scroll: 0,
+            bug_desc_scroll_to_end: false,
             gemini_client: Arc::new(gemini_client),
             gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
             spinner_enabled: false,
@@ -102,26 +102,26 @@ impl App {
     }
 
     /// Moves the selection up in the table.
-    pub fn previous_item(&mut self) {
-        let i = match self.table_state.selected() {
+    pub fn bug_table_previous_item(&mut self) {
+        let i = match self.bug_table_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.table_items.len() - 1
+                    self.bug_table_items.len() - 1
                 } else {
                     i - 1
                 }
             }
             None => 0,
         };
-        self.table_state.select(Some(i));
-        self.scrollbar_state = self.scrollbar_state.position(i);
+        self.bug_table_state.select(Some(i));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
     /// Moves the selection down in the table.
-    pub fn next_item(&mut self) {
-        let i = match self.table_state.selected() {
+    pub fn bug_table_next_item(&mut self) {
+        let i = match self.bug_table_state.selected() {
             Some(i) => {
-                if i >= self.table_items.len() - 1 {
+                if i >= self.bug_table_items.len() - 1 {
                     0
                 } else {
                     i + 1
@@ -129,8 +129,37 @@ impl App {
             }
             None => 0,
         };
-        self.table_state.select(Some(i));
-        self.scrollbar_state = self.scrollbar_state.position(i);
+        self.bug_table_state.select(Some(i));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
+    }
+
+    pub fn bug_table_page_up_item(&mut self) {
+        let i = match self.bug_table_state.selected() {
+            Some(i) => i.saturating_sub(10),
+            None => 0,
+        };
+        self.bug_table_state.select(Some(i));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
+    }
+
+    pub fn bug_table_page_down_item(&mut self) {
+        let i = match self.bug_table_state.selected() {
+            Some(i) => (i + 10).min(self.bug_table_items.len() - 1),
+            None => 0,
+        };
+        self.bug_table_state.select(Some(i));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
+    }
+
+    pub fn bug_table_go_to_start(&mut self) {
+        self.bug_table_state.select(Some(0));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(0);
+    }
+
+    pub fn bug_table_go_to_end(&mut self) {
+        let i = self.bug_table_items.len() - 1;
+        self.bug_table_state.select(Some(i));
+        self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
     /// Toggles the spinner display in the bottom bar.
@@ -138,34 +167,5 @@ impl App {
         self.spinner_enabled = !self.spinner_enabled;
         // Change the label with each 's' activation
         self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
-    }
-
-    pub fn page_up_item(&mut self) {
-        let i = match self.table_state.selected() {
-            Some(i) => i.saturating_sub(10),
-            None => 0,
-        };
-        self.table_state.select(Some(i));
-        self.scrollbar_state = self.scrollbar_state.position(i);
-    }
-
-    pub fn page_down_item(&mut self) {
-        let i = match self.table_state.selected() {
-            Some(i) => (i + 10).min(self.table_items.len() - 1),
-            None => 0,
-        };
-        self.table_state.select(Some(i));
-        self.scrollbar_state = self.scrollbar_state.position(i);
-    }
-
-    pub fn go_to_start(&mut self) {
-        self.table_state.select(Some(0));
-        self.scrollbar_state = self.scrollbar_state.position(0);
-    }
-
-    pub fn go_to_end(&mut self) {
-        let i = self.table_items.len() - 1;
-        self.table_state.select(Some(i));
-        self.scrollbar_state = self.scrollbar_state.position(i);
     }
 }

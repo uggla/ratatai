@@ -53,24 +53,24 @@ pub async fn handle_key_events(
             match app.active_panel {
                 ActivePanel::Left => match key.code {
                     KeyCode::Char('q') => return Ok(QuitApp::Yes), // Exit loop on 'q'
-                    KeyCode::Up => app.previous_item(),
-                    KeyCode::Down => app.next_item(),
-                    KeyCode::PageUp => app.page_up_item(),
-                    KeyCode::PageDown => app.page_down_item(),
-                    KeyCode::Home => app.go_to_start(),
-                    KeyCode::End => app.go_to_end(),
+                    KeyCode::Up => app.bug_table_previous_item(),
+                    KeyCode::Down => app.bug_table_next_item(),
+                    KeyCode::PageUp => app.bug_table_page_up_item(),
+                    KeyCode::PageDown => app.bug_table_page_down_item(),
+                    KeyCode::Home => app.bug_table_go_to_start(),
+                    KeyCode::End => app.bug_table_go_to_end(),
                     KeyCode::Tab => {
                         app.active_panel = ActivePanel::Right;
-                        app.right_panel_scroll = 0;
+                        app.bug_desc_scroll = 0;
                     }
                     KeyCode::Enter => {
-                        app.selected_bug_index = app.table_state.selected();
-                        if let Some(index) = app.selected_bug_index {
-                            if let Some(bug) = app.table_items.get(index) {
+                        app.bug_table_selected_index = app.bug_table_state.selected();
+                        if let Some(index) = app.bug_table_selected_index {
+                            if let Some(bug) = app.bug_table_items.get(index) {
                                 let mut gemini_response = app.gemini_response.lock().unwrap();
                                 *gemini_response = bug.description.clone();
-                                app.right_panel_scroll = 0;
-                                app.scroll_to_end = false;
+                                app.bug_desc_scroll = 0;
+                                app.bug_desc_scroll_to_end = false;
                             }
                         }
                     }
@@ -79,27 +79,27 @@ pub async fn handle_key_events(
                 ActivePanel::Right => match key.code {
                     KeyCode::Char('q') => return Ok(QuitApp::Yes), // Exit loop on 'q'
                     KeyCode::Up => {
-                        app.right_panel_scroll = app.right_panel_scroll.saturating_sub(1);
-                        app.scroll_to_end = false;
+                        app.bug_desc_scroll = app.bug_desc_scroll.saturating_sub(1);
+                        app.bug_desc_scroll_to_end = false;
                     }
                     KeyCode::Down => {
-                        app.right_panel_scroll = app.right_panel_scroll.saturating_add(1);
-                        app.scroll_to_end = false;
+                        app.bug_desc_scroll = app.bug_desc_scroll.saturating_add(1);
+                        app.bug_desc_scroll_to_end = false;
                     }
                     KeyCode::PageUp => {
-                        app.right_panel_scroll = app.right_panel_scroll.saturating_sub(10);
-                        app.scroll_to_end = false;
+                        app.bug_desc_scroll = app.bug_desc_scroll.saturating_sub(10);
+                        app.bug_desc_scroll_to_end = false;
                     }
                     KeyCode::PageDown => {
-                        app.right_panel_scroll = app.right_panel_scroll.saturating_add(10);
-                        app.scroll_to_end = false;
+                        app.bug_desc_scroll = app.bug_desc_scroll.saturating_add(10);
+                        app.bug_desc_scroll_to_end = false;
                     }
                     KeyCode::Home => {
-                        app.right_panel_scroll = 0;
-                        app.scroll_to_end = false;
+                        app.bug_desc_scroll = 0;
+                        app.bug_desc_scroll_to_end = false;
                     }
                     KeyCode::End => {
-                        app.scroll_to_end = true;
+                        app.bug_desc_scroll_to_end = true;
                     }
                     KeyCode::Char('r') => {
                         app.current_screen = Screen::BugEditing;

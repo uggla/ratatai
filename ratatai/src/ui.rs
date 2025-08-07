@@ -2,8 +2,9 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
+    text::Line,
     widgets::{
         Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
         Table,
@@ -128,7 +129,7 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
         .height(1)
         .bottom_margin(1);
 
-    let rows = app.table_items.iter().map(|item| {
+    let rows = app.bug_table_items.iter().map(|item| {
         let height = 1;
         let cells = vec![
             Cell::from(item.bug_id.to_string()),
@@ -164,7 +165,7 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    f.render_stateful_widget(table_widget, area, &mut app.table_state);
+    f.render_stateful_widget(table_widget, area, &mut app.bug_table_state);
 
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
@@ -172,16 +173,19 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_stateful_widget(
         scrollbar,
-        area.inner(Default::default()),
-        &mut app.scrollbar_state,
+        area.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 0,
+        }),
+        &mut app.bug_table_scrollbar_state,
     );
 }
 
 fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
     let current_display_text = app.gemini_response.lock().unwrap().clone();
 
-    let gemini_title = if let Some(index) = app.selected_bug_index {
-        if let Some(bug) = app.table_items.get(index) {
+    let gemini_title = if let Some(index) = app.bug_table_selected_index {
+        if let Some(bug) = app.bug_table_items.get(index) {
             let truncated_title = if bug.title.chars().count() > 40 {
                 format!("{}...", bug.title.chars().take(40).collect::<String>())
             } else {
@@ -195,10 +199,6 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
         "Gemini Response".to_string()
     };
 
-    if !current_display_text.starts_with("Loading") {
-        // gemini_title.push_str(editor_instruction);
-    }
-
     let right_panel_border_style = match app.current_screen {
         Screen::BugList => match app.active_panel {
             ActivePanel::Right => Style::default().fg(Color::Green),
@@ -210,44 +210,51 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
         },
     };
 
-    let wrapped_text = wrap(&current_display_text, (area.width - 2) as usize);
-    let content_length = wrapped_text.len();
-    let viewport_height = (area.height.saturating_sub(2)) as usize;
+    let scrollbar_area = area.inner(Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+    let scrollbar_height = scrollbar_area.height as usize;
 
-    if app.scroll_to_end {
-        app.right_panel_scroll = content_length.saturating_sub(viewport_height) as u16;
-        app.scroll_to_end = false;
+    let wrapped_text = wrap(&current_display_text, (scrollbar_area.width) as usize);
+    let wrapped_text: Vec<Line> = wrapped_text
+        .iter()
+        .map(|line| Line::from(line.to_string()))
+        .collect();
+
+    let content_length = wrapped_text.len();
+
+    if app.bug_desc_scroll_to_end {
+        app.bug_desc_scroll = content_length.saturating_sub(scrollbar_height) as u16;
+        app.bug_desc_scroll_to_end = false;
     }
 
-    let max_scroll = content_length.saturating_sub(viewport_height) as u16;
-    app.right_panel_scroll = app.right_panel_scroll.min(max_scroll);
+    let max_scroll = content_length.saturating_sub(scrollbar_height) as u16;
+    app.bug_desc_scroll = app.bug_desc_scroll.min(max_scroll);
 
-    let gemini_paragraph = Paragraph::new(current_display_text.as_str())
+    let gemini_paragraph = Paragraph::new(wrapped_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(gemini_title)
                 .border_style(right_panel_border_style),
         )
-        .wrap(ratatui::widgets::Wrap { trim: true })
-        .scroll((app.right_panel_scroll, 0));
+        .scroll((app.bug_desc_scroll, 0));
 
     f.render_widget(gemini_paragraph, area);
 
-    let mut right_scrollbar_state =
-        ScrollbarState::new(content_length).position(app.right_panel_scroll as usize);
+    let mut bug_desc_scrollbar_state = ScrollbarState::new(content_length)
+        .viewport_content_length(scrollbar_height)
+        .position(app.bug_desc_scroll as usize);
 
-    let right_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+    let bug_table_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
         .end_symbol(Some("↓"));
 
     f.render_stateful_widget(
-        right_scrollbar,
-        area.inner(ratatui::layout::Margin {
-            vertical: 1,
-            horizontal: 0,
-        }),
-        &mut right_scrollbar_state,
+        bug_table_scrollbar,
+        scrollbar_area,
+        &mut bug_desc_scrollbar_state,
     );
 }
 
