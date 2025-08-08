@@ -14,7 +14,11 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_writer(non_blocking_appender))
+        .with(
+            fmt::layer()
+                .with_writer(non_blocking_appender)
+                .with_ansi(false),
+        )
         .init();
 
     tracing::info!("Application starting");
