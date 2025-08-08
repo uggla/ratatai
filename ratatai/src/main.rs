@@ -5,7 +5,7 @@ use ratatai::run;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     // Setup logging
     let file_appender = tracing_appender::rolling::daily("logs", "ratatai.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(file_appender);
@@ -20,10 +20,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Application starting");
 
     // Call the main function of our application defined in lib.rs
-    let result = run().await;
+    run().await?;
 
     tracing::info!("Application ending");
 
-    result?;
     Ok(())
 }

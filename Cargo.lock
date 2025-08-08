@@ -1652,12 +1652,14 @@ dependencies = [
 name = "ratatai"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "crossterm 0.29.0",
  "dotenv",
  "google-ai-rs",
  "launchpad_api_client",
  "ratatui",
+ "regex",
  "serde",
  "tempfile",
  "textwrap",

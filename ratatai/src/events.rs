@@ -34,7 +34,7 @@ pub async fn handle_key_events(
     key: KeyEvent,
     app: &mut App,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-) -> Result<QuitApp, Box<dyn std::error::Error>> {
+) -> anyhow::Result<QuitApp> {
     if key.kind == KeyEventKind::Press {
         if let QuitApp::Yes = handle_global_keys(key, app)? {
             return Ok(QuitApp::Yes);
@@ -64,7 +64,7 @@ pub async fn handle_key_events(
     Ok(QuitApp::No) // Return false if no exit condition was met
 }
 
-fn handle_global_keys(key: KeyEvent, app: &mut App) -> Result<QuitApp, Box<dyn std::error::Error>> {
+fn handle_global_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Char('s') => {
             app.toggle_spinner();
@@ -75,10 +75,7 @@ fn handle_global_keys(key: KeyEvent, app: &mut App) -> Result<QuitApp, Box<dyn s
     Ok(QuitApp::No)
 }
 
-fn handle_bug_list_screen_keys(
-    key: KeyEvent,
-    app: &mut App,
-) -> Result<QuitApp, Box<dyn std::error::Error>> {
+fn handle_bug_list_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     if let KeyCode::Tab = key.code {
         if app.active_panel == ActivePanel::Right {
             app.active_panel = ActivePanel::Left
@@ -89,10 +86,7 @@ fn handle_bug_list_screen_keys(
     Ok(QuitApp::No)
 }
 
-fn handle_bug_editing_screen_keys(
-    key: KeyEvent,
-    app: &mut App,
-) -> Result<QuitApp, Box<dyn std::error::Error>> {
+fn handle_bug_editing_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Esc => {
             app.current_screen = Screen::BugList;
@@ -111,7 +105,7 @@ fn handle_bug_editing_screen_keys(
 }
 
 // Bug table is activated
-fn handle_bug_table(key: KeyEvent, app: &mut App) -> Result<QuitApp, Box<dyn std::error::Error>> {
+fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Up => app.bug_table_previous_item(),
         KeyCode::Down => app.bug_table_next_item(),
@@ -124,7 +118,7 @@ fn handle_bug_table(key: KeyEvent, app: &mut App) -> Result<QuitApp, Box<dyn std
             if let Some(index) = app.bug_table_selected_index {
                 if let Some(bug) = app.bug_table_items.get(index) {
                     let mut gemini_response = app.gemini_response.lock().unwrap();
-                    *gemini_response = bug.description.clone();
+                    // *gemini_response = bug.description.clone();
                     app.bug_desc_scroll = 0;
                     app.bug_desc_scroll_to_end = false;
                 }
@@ -139,7 +133,7 @@ fn handle_bug_description(
     key: KeyEvent,
     app: &mut App,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-) -> Result<QuitApp, Box<dyn std::error::Error>> {
+) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Up => {
             app.bug_desc_scroll = app.bug_desc_scroll.saturating_sub(1);

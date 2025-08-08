@@ -10,6 +10,7 @@ use ratatui::{
         Table,
     },
 };
+use regex::Regex;
 use textwrap::wrap;
 
 // We need the App struct to access the application state
@@ -20,7 +21,7 @@ use crate::app::{ActivePanel, App, Screen};
 
 /// Playful labels for the spinner, cycled with each 's' key press
 pub const SPINNER_LABELS: [&str; 5] = [
-    "Loading",
+    "Loading...",
     "Patience, young padawan...",
     "Don't blink",
     "Tinkering...",
@@ -47,7 +48,7 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
             draw_bug_list(f, app, main_chunks[0]);
 
             // Right Panel (Gemini Response)
-            draw_bug_description(f, app, main_chunks[1]);
+            // draw_bug_description(f, app, main_chunks[1]);
         }
         Screen::BugEditing => {
             let main_chunks = Layout::default()
@@ -55,7 +56,7 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(chunks[0]);
 
-            draw_bug_description(f, app, main_chunks[0]);
+            // draw_bug_description(f, app, main_chunks[0]);
             draw_bug_reply(f, app, main_chunks[1]);
         }
     }
@@ -124,25 +125,38 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
     let header_cells = ["Bug ID", "Date", "Title"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Red)));
-    let header = Row::new(header_cells)
-        .style(Style::default())
-        .height(1)
-        .bottom_margin(1);
+    let header = Row::new(header_cells).style(Style::default()).height(1);
 
     let rows = app.bug_table_items.iter().map(|item| {
         let height = 1;
+
+        let extract_from_title = |o| -> (String, String) {
+            let re = Regex::new(r#"#(\d+).*?OpenStack Compute \(nova\):\s+"([^"]+)""#).unwrap();
+
+            if let Some(caps) = re.captures(o) {
+                let id = &caps[1];
+                let title = &caps[2];
+                (id.to_string(), title.to_string())
+            } else {
+                ("".to_string(), "".to_string())
+            }
+        };
+
+        let (id, title) = extract_from_title(&item.title);
+
         let cells = vec![
-            Cell::from(item.bug_id.to_string()),
-            Cell::from(item.date.clone()),
-            Cell::from(item.title.clone()),
+            Cell::from(id),
+            // I think we can unwrap safely as I guess we always have a date_created
+            Cell::from(item.date_created.unwrap().clone().date_naive().to_string()),
+            Cell::from(title),
         ];
         Row::new(cells).height(height as u16).bottom_margin(1)
     });
 
     let widths = &[
-        Constraint::Percentage(10),
-        Constraint::Percentage(20),
-        Constraint::Percentage(70),
+        Constraint::Length(9),
+        Constraint::Length(12),
+        Constraint::Percentage(100),
     ];
     let table_border_style = if let ActivePanel::Left = app.active_panel {
         Style::default().fg(Color::Green)
@@ -181,82 +195,82 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
     );
 }
 
-fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
-    let current_display_text = app.gemini_response.lock().unwrap().clone();
-
-    let gemini_title = if let Some(index) = app.bug_table_selected_index {
-        if let Some(bug) = app.bug_table_items.get(index) {
-            let truncated_title = if bug.title.chars().count() > 40 {
-                format!("{}...", bug.title.chars().take(40).collect::<String>())
-            } else {
-                bug.title.clone()
-            };
-            format!("{}-{}", bug.bug_id, truncated_title)
-        } else {
-            "Gemini Response".to_string()
-        }
-    } else {
-        "Gemini Response".to_string()
-    };
-
-    let right_panel_border_style = match app.current_screen {
-        Screen::BugList => match app.active_panel {
-            ActivePanel::Right => Style::default().fg(Color::Green),
-            _ => Style::default().fg(Color::White),
-        },
-        Screen::BugEditing => match app.active_panel {
-            ActivePanel::Left => Style::default().fg(Color::Green),
-            _ => Style::default().fg(Color::White),
-        },
-    };
-
-    let scrollbar_area = area.inner(Margin {
-        vertical: 1,
-        horizontal: 1,
-    });
-    let scrollbar_height = scrollbar_area.height as usize;
-
-    let wrapped_text = wrap(&current_display_text, (scrollbar_area.width) as usize);
-    let wrapped_text: Vec<Line> = wrapped_text
-        .iter()
-        .map(|line| Line::from(line.to_string()))
-        .collect();
-
-    let content_length = wrapped_text.len();
-
-    if app.bug_desc_scroll_to_end {
-        app.bug_desc_scroll = content_length.saturating_sub(scrollbar_height) as u16;
-        app.bug_desc_scroll_to_end = false;
-    }
-
-    let max_scroll = content_length.saturating_sub(scrollbar_height) as u16;
-    app.bug_desc_scroll = app.bug_desc_scroll.min(max_scroll);
-
-    let gemini_paragraph = Paragraph::new(wrapped_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(gemini_title)
-                .border_style(right_panel_border_style),
-        )
-        .scroll((app.bug_desc_scroll, 0));
-
-    f.render_widget(gemini_paragraph, area);
-
-    let mut bug_desc_scrollbar_state = ScrollbarState::new(content_length)
-        .viewport_content_length(scrollbar_height)
-        .position(app.bug_desc_scroll as usize);
-
-    let bug_table_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(Some("↑"))
-        .end_symbol(Some("↓"));
-
-    f.render_stateful_widget(
-        bug_table_scrollbar,
-        scrollbar_area,
-        &mut bug_desc_scrollbar_state,
-    );
-}
+// fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
+//     let current_display_text = app.gemini_response.lock().unwrap().clone();
+//
+//     let gemini_title = if let Some(index) = app.bug_table_selected_index {
+//         if let Some(bug) = app.bug_table_items.get(index) {
+//             let truncated_title = if bug.title.chars().count() > 40 {
+//                 format!("{}...", bug.title.chars().take(40).collect::<String>())
+//             } else {
+//                 bug.title.clone()
+//             };
+//             format!("{}-{}", bug.bug_id, truncated_title)
+//         } else {
+//             "Gemini Response".to_string()
+//         }
+//     } else {
+//         "Gemini Response".to_string()
+//     };
+//
+//     let right_panel_border_style = match app.current_screen {
+//         Screen::BugList => match app.active_panel {
+//             ActivePanel::Right => Style::default().fg(Color::Green),
+//             _ => Style::default().fg(Color::White),
+//         },
+//         Screen::BugEditing => match app.active_panel {
+//             ActivePanel::Left => Style::default().fg(Color::Green),
+//             _ => Style::default().fg(Color::White),
+//         },
+//     };
+//
+//     let scrollbar_area = area.inner(Margin {
+//         vertical: 1,
+//         horizontal: 1,
+//     });
+//     let scrollbar_height = scrollbar_area.height as usize;
+//
+//     let wrapped_text = wrap(&current_display_text, (scrollbar_area.width) as usize);
+//     let wrapped_text: Vec<Line> = wrapped_text
+//         .iter()
+//         .map(|line| Line::from(line.to_string()))
+//         .collect();
+//
+//     let content_length = wrapped_text.len();
+//
+//     if app.bug_desc_scroll_to_end {
+//         app.bug_desc_scroll = content_length.saturating_sub(scrollbar_height) as u16;
+//         app.bug_desc_scroll_to_end = false;
+//     }
+//
+//     let max_scroll = content_length.saturating_sub(scrollbar_height) as u16;
+//     app.bug_desc_scroll = app.bug_desc_scroll.min(max_scroll);
+//
+//     let gemini_paragraph = Paragraph::new(wrapped_text)
+//         .block(
+//             Block::default()
+//                 .borders(Borders::ALL)
+//                 .title(gemini_title)
+//                 .border_style(right_panel_border_style),
+//         )
+//         .scroll((app.bug_desc_scroll, 0));
+//
+//     f.render_widget(gemini_paragraph, area);
+//
+//     let mut bug_desc_scrollbar_state = ScrollbarState::new(content_length)
+//         .viewport_content_length(scrollbar_height)
+//         .position(app.bug_desc_scroll as usize);
+//
+//     let bug_table_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+//         .begin_symbol(Some("↑"))
+//         .end_symbol(Some("↓"));
+//
+//     f.render_stateful_widget(
+//         bug_table_scrollbar,
+//         scrollbar_area,
+//         &mut bug_desc_scrollbar_state,
+//     );
+// }
 
 fn draw_bug_reply(f: &mut Frame, app: &mut App, area: Rect) {
     let lorem_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";

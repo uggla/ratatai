@@ -9,14 +9,19 @@ use crossterm::{
     },
 };
 use google_ai_rs::Client;
-use ratatui::Terminal;
+use launchpad_api_client::{BugTaskEntry, LaunchpadError, StatusFilter, get_project_bug_tasks};
 use ratatui::backend::CrosstermBackend;
+use ratatui::{Terminal, widgets::ScrollbarState};
 use std::{
-    io::{Write, stdout},
+    io::{Empty, Write, stdout},
     sync::Arc,
     time::Duration,
 };
-use tokio::time::sleep;
+use tokio::{
+    sync::mpsc::{self, Sender},
+    time::{Instant, sleep},
+};
+use tracing::{debug, error};
 
 // Import the modules we are going to create
 mod ai;
@@ -32,8 +37,15 @@ use crate::{
     events::{QuitApp, handle_key_events},
 };
 
+#[derive(Debug)]
+enum LpMessage {
+    Bugs(Box<[BugTaskEntry]>),
+    Bug(Box<launchpad_api_client::LaunchpadBug>),
+    Error(LaunchpadError),
+}
+
 /// Main function of the TUI application.
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     // The API key is not strictly necessary at the moment, but we keep it for later.
     let api_key = std::env::var("GOOGLE_API_KEY")
@@ -71,20 +83,42 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let (launchpad_to_app_tx, mut launchpad_to_app_rx) = mpsc::channel::<LpMessage>(5);
+
+    get_bugs(launchpad_to_app_tx, &mut app);
+
+    let tick_rate = Duration::from_millis(120);
+    let mut last_tick = Instant::now();
     // Main application loop
     loop {
         // Draw the user interface by passing the reference to the app object
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
+        match launchpad_to_app_rx.try_recv() {
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {}
+            Ok(msg) => match msg {
+                LpMessage::Bugs(bugs) => {
+                    app.bug_table_items = bugs;
+                    app.spinner_enabled = false;
+                    app.bug_table_state.select(Some(0));
+                    app.bug_table_scrollbar_state = ScrollbarState::new(app.bug_table_items.len());
+                }
+                _ => unimplemented!(),
+            },
+        };
         // Handle input events
-        if event::poll(Duration::from_millis(64))? {
+        let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+        if event::poll(timeout)? {
             if let CrosstermEvent::Key(key) = event::read()? {
                 let exit = handle_key_events(key, &mut app, &mut terminal).await?;
                 if exit == QuitApp::Yes {
                     break;
                 }
             }
-            sleep(Duration::from_millis(32)).await;
+        }
+        if last_tick.elapsed() >= tick_rate {
+            last_tick = Instant::now();
         }
     }
     // Final cleanup before exiting
@@ -94,4 +128,31 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+fn get_bugs(launchpad_to_app_tx: Sender<LpMessage>, app: &mut App) {
+    app.spinner_enabled = true;
+    tokio::spawn(async move {
+        debug!("Task to get bugs started");
+        let client = launchpad_api_client::client::ReqwestClient::new();
+
+        match get_project_bug_tasks(&client, "nova", Some(StatusFilter::New)).await {
+            Ok(mut bug_tasks) => {
+                bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
+
+                if let Err(e) = launchpad_to_app_tx
+                    .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
+                    .await
+                {
+                    error!("Fail to send message, error {e}");
+                }
+            }
+            Err(e) => {
+                if let Err(e) = launchpad_to_app_tx.send(LpMessage::Error(e)).await {
+                    error!("Fail to send message, error {e}");
+                }
+            }
+        }
+        debug!("Task to get bugs completed");
+    });
 }

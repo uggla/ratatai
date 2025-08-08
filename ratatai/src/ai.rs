@@ -9,7 +9,7 @@ use tokio::time::sleep;
 
 /// Simulates a response from Gemini.
 /// In a future version, this function will contain the actual API call.
-pub async fn get_gemini_response_static() -> Result<String, Box<dyn std::error::Error>> {
+pub async fn get_gemini_response_static() -> anyhow::Result<String> {
     sleep(Duration::from_secs(2)).await; // Simulate a network delay
     Ok("This is a static response from Gemini for now. The actual API call is commented out to facilitate UI development. You can edit this text if you wish.".to_string())
 }
@@ -18,7 +18,7 @@ pub async fn get_gemini_response_static() -> Result<String, Box<dyn std::error::
 pub async fn get_gemini_response<'a>(
     model: GenerativeModel<'a>,
     prompt: String,
-) -> Result<Response, Box<dyn std::error::Error>> {
+) -> anyhow::Result<Response> {
     let response = model
         //         .generate_content("What is Rust and why is it popular?")
         .generate_content(prompt)
