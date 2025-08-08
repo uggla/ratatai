@@ -113,6 +113,7 @@ fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
         KeyCode::PageDown => app.bug_table_page_down_item(),
         KeyCode::Home => app.bug_table_go_to_start(),
         KeyCode::End => app.bug_table_go_to_end(),
+        KeyCode::Char('r') => app.get_bugs(),
         KeyCode::Enter => {
             app.bug_table_selected_index = app.bug_table_state.selected();
             if let Some(index) = app.bug_table_selected_index {

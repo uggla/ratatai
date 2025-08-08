@@ -59,8 +59,14 @@ pub async fn run() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.hide_cursor()?;
 
+    let (lp_sender, mut lp_receiver) = mpsc::channel::<LpMessage>(5);
+
     // Create a new instance of our application
-    let mut app = App::new(Client::new(api_key.into()).await?);
+    let mut app = App::new(
+        Client::new(api_key.into()).await?,
+        launchpad_api_client::client::ReqwestClient::new(),
+        lp_sender,
+    );
 
     // let client_for_spawn = Arc::clone(&client);
     let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
@@ -83,9 +89,7 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    let (launchpad_to_app_tx, mut launchpad_to_app_rx) = mpsc::channel::<LpMessage>(5);
-
-    get_bugs(launchpad_to_app_tx, &mut app);
+    app.get_bugs();
 
     let tick_rate = Duration::from_millis(120);
     let mut last_tick = Instant::now();
@@ -94,7 +98,7 @@ pub async fn run() -> anyhow::Result<()> {
         // Draw the user interface by passing the reference to the app object
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
-        match launchpad_to_app_rx.try_recv() {
+        match lp_receiver.try_recv() {
             Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
             Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {}
             Ok(msg) => match msg {
@@ -128,31 +132,4 @@ pub async fn run() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     Ok(())
-}
-
-fn get_bugs(launchpad_to_app_tx: Sender<LpMessage>, app: &mut App) {
-    app.spinner_enabled = true;
-    tokio::spawn(async move {
-        debug!("Task to get bugs started");
-        let client = launchpad_api_client::client::ReqwestClient::new();
-
-        match get_project_bug_tasks(&client, "nova", Some(StatusFilter::New)).await {
-            Ok(mut bug_tasks) => {
-                bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
-
-                if let Err(e) = launchpad_to_app_tx
-                    .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
-                    .await
-                {
-                    error!("Fail to send message, error {e}");
-                }
-            }
-            Err(e) => {
-                if let Err(e) = launchpad_to_app_tx.send(LpMessage::Error(e)).await {
-                    error!("Fail to send message, error {e}");
-                }
-            }
-        }
-        debug!("Task to get bugs completed");
-    });
 }

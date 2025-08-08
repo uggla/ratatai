@@ -1,12 +1,14 @@
 // src/app.rs
 
 use google_ai_rs::Client;
-use launchpad_api_client::BugTaskEntry;
+use launchpad_api_client::{BugTaskEntry, StatusFilter, get_project_bug_tasks};
 use ratatui::widgets::{ScrollbarState, TableState};
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tracing::{debug, error};
 
-use crate::ui::SPINNER_LABELS;
+use crate::{LpMessage, ui::SPINNER_LABELS};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Screen {
@@ -40,23 +42,30 @@ pub struct App {
     pub current_screen: Screen,
     pub bug_desc_scroll: u16,
     pub bug_desc_scroll_to_end: bool,
-    pub gemini_client: Arc<Client>,
-    pub gemini_response: Arc<Mutex<String>>,
-    /// Whether the spinner in the bottom bar is enabled (toggled by 's')
     pub spinner_enabled: bool,
     /// Stateful state for spinner animation
     pub spinner_state: ThrobberState,
     /// Current index for the spinner label in SPINNER_LABELS
     pub spinner_label_index: usize,
+    pub gemini_client: Arc<Client>,
+    pub launchpad_client: Arc<launchpad_api_client::client::ReqwestClient>,
+    pub gemini_response: Arc<Mutex<String>>,
+    /// Whether the spinner in the bottom bar is enabled (toggled by 's')
+    pub lp_sender: Sender<LpMessage>,
 }
 
 impl App {
     /// Creates a new instance of the application with the initial state.
-    pub fn new(gemini_client: Client) -> App {
+    pub fn new(
+        gemini_client: Client,
+        launchpad_client: launchpad_api_client::client::ReqwestClient,
+        lp_sender: Sender<LpMessage>,
+    ) -> App {
         let items = Box::new([]);
         let mut table_state = TableState::default();
         table_state.select(None);
         let scrollbar_state = ScrollbarState::new(0);
+        // let (launchpad_to_app_tx, launchpad_to_app_rx) = mpsc::channel::<LpMessage>(5);
 
         App {
             bug_table_items: items,
@@ -67,11 +76,13 @@ impl App {
             current_screen: Screen::BugList,
             bug_desc_scroll: 0,
             bug_desc_scroll_to_end: false,
-            gemini_client: Arc::new(gemini_client),
-            gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
             spinner_label_index: 0,
+            gemini_client: Arc::new(gemini_client),
+            launchpad_client: Arc::new(launchpad_client),
+            gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
+            lp_sender,
         }
     }
 
@@ -141,5 +152,33 @@ impl App {
         self.spinner_enabled = !self.spinner_enabled;
         // Change the label with each 's' activation
         self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
+    }
+
+    pub fn get_bugs(&mut self) {
+        self.spinner_enabled = true;
+        let sender = self.lp_sender.clone();
+        let client = self.launchpad_client.clone();
+        tokio::spawn(async move {
+            debug!("Task to get bugs started");
+
+            match get_project_bug_tasks(&*client, "nova", Some(StatusFilter::New)).await {
+                Ok(mut bug_tasks) => {
+                    bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
+
+                    if let Err(e) = sender
+                        .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
+                        .await
+                    {
+                        error!("Fail to send message, error {e}");
+                    }
+                }
+                Err(e) => {
+                    if let Err(e) = sender.send(LpMessage::Error(e)).await {
+                        error!("Fail to send message, error {e}");
+                    }
+                }
+            }
+            debug!("Task to get bugs completed");
+        });
     }
 }
