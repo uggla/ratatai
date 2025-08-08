@@ -7,17 +7,20 @@ use throbber_widgets_tui::ThrobberState;
 
 use crate::ui::SPINNER_LABELS;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Screen {
     BugList,
     BugEditing,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ActivePanel {
     Left,
     Right,
 }
 
 /// Represents a row in our "bugs" table
+#[derive(Debug)]
 pub struct Bug {
     pub bug_id: u32,
     pub date: String,
@@ -26,6 +29,7 @@ pub struct Bug {
 }
 
 /// Represents the state of the TUI application.
+#[derive(Debug)]
 pub struct App {
     pub bug_table_items: Vec<Bug>,
     pub bug_table_state: TableState,
