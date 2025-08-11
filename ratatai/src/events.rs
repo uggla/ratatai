@@ -45,7 +45,7 @@ pub async fn handle_key_events(
 
         if let QuitApp::Yes = match app.current_screen {
             Screen::BugList => match app.active_panel {
-                ActivePanel::Left => handle_bug_table(key, app)?,
+                ActivePanel::Left => handle_bug_table(key, app).await?,
                 ActivePanel::Right => handle_bug_description(key, app, terminal).await?,
             },
             Screen::BugEditing => match app.active_panel {
@@ -101,7 +101,7 @@ fn handle_bug_editing_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Resul
 }
 
 // Bug table is activated
-fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
+async fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Up => app.bug_table_previous_item(),
         KeyCode::Down => app.bug_table_next_item(),
@@ -112,9 +112,9 @@ fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
         KeyCode::Char('r') => app.get_bugs(PROJECT.to_string()),
         KeyCode::Enter => {
             if let Some(index) = app.bug_table_state.selected() {
-                if let Some(bug) = app.bug_table_items.get(index) {
+                if let Some(bug_entry) = app.bug_table_items.get(index) {
                     let mut gemini_response = app.gemini_response.lock().unwrap();
-                    *gemini_response = bug.bug_link.clone();
+                    *gemini_response = bug_entry.bug_link.clone();
                     app.bug_desc_scroll = 0;
                     app.bug_desc_scroll_to_end = false;
                 }
@@ -158,6 +158,20 @@ async fn handle_bug_description(
             app.current_screen = Screen::BugEditing;
             app.active_panel = ActivePanel::Left;
         }
+        KeyCode::Char('v') => {
+            if let Some(index) = app.bug_table_state.selected() {
+                if let Some(bug_entry) = app.bug_table_items.get(index) {
+                    let status = Command::new("xdg-open")
+                        .arg(&bug_entry.web_link)
+                        .status()
+                        .await?;
+
+                    if !status.success() {
+                        error!("Fail to open url: {:?}", status.code());
+                    }
+                }
+            }
+        }
         KeyCode::Char('a') => {
             let client = Arc::clone(&app.gemini_client);
             let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
@@ -182,10 +196,6 @@ async fn handle_bug_description(
         KeyCode::Char('e') => {
             // Edit the content
             let content_to_edit = app.gemini_response.lock().unwrap().clone();
-
-            // let mut temp_file = NamedTempFile::new()?;
-            // std::io::Write::write_all(&mut temp_file, content_to_edit.as_bytes())?;
-            // let file_path = temp_file.path().to_path_buf();
 
             let (file_path, _file) = tokio::task::spawn_blocking({
                 let content = content_to_edit.to_owned();

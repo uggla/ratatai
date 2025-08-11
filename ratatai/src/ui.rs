@@ -93,7 +93,9 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
     // Middle sub-panel: Command input
     let command_text = match app.current_screen {
         Screen::BugList => match app.active_panel {
-            ActivePanel::Left => "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate",
+            ActivePanel::Left => {
+                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'r' to refresh list, 'Enter' to open bug"
+            }
             ActivePanel::Right => {
                 "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'a' for AI generation, 'r' to reply to this bug"
             }
