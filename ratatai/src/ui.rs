@@ -179,6 +179,10 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
     let current_display_text = app.gemini_response.lock().unwrap().clone();
+    // Replace tab characters with spaces to prevent layout corruption.
+    // The Paragraph widget miscalculates line widths when tabs are present,
+    // causing severe misalignment and scroll glitches.
+    let current_display_text = current_display_text.replace('\t', " ");
 
     let gemini_title = if let Some(index) = app.bug_table_state.selected() {
         if let Some(bug) = app.bug_table_items.get(index) {
