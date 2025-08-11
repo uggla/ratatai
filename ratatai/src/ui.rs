@@ -121,37 +121,18 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let table_title = "Mock Bugs".to_string();
+    let table_title = format!(
+        "Bugs in status 'New' {}/{}",
+        match app.bug_table_state.selected() {
+            None => "-".to_string(),
+            Some(n) => (n + 1).to_string(),
+        },
+        app.bug_table_items.len()
+    );
     let header_cells = ["Bug ID", "Date", "Title"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Red)));
     let header = Row::new(header_cells).style(Style::default()).height(1);
-
-    let rows = app.bug_table_items.iter().map(|item| {
-        let height = 1;
-
-        let extract_from_title = |o| -> (String, String) {
-            let re = Regex::new(r#"#(\d+).*?OpenStack Compute \(nova\):\s+"([^"]+)""#).unwrap();
-
-            if let Some(caps) = re.captures(o) {
-                let id = &caps[1];
-                let title = &caps[2];
-                (id.to_string(), title.to_string())
-            } else {
-                ("".to_string(), "".to_string())
-            }
-        };
-
-        let (id, title) = extract_from_title(&item.title);
-
-        let cells = vec![
-            Cell::from(id),
-            // I think we can unwrap safely as I guess we always have a date_created
-            Cell::from(item.date_created.unwrap().clone().date_naive().to_string()),
-            Cell::from(title),
-        ];
-        Row::new(cells).height(height as u16).bottom_margin(1)
-    });
 
     let widths = &[
         Constraint::Length(9),
@@ -164,7 +145,7 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::White)
     };
 
-    let table_widget = Table::new(rows, widths)
+    let table_widget = Table::new(app.bug_table_rows.iter().cloned(), widths)
         .header(header)
         .block(
             Block::default()

@@ -10,8 +10,12 @@ use crossterm::{
 };
 use google_ai_rs::Client;
 use launchpad_api_client::{BugTaskEntry, LaunchpadError, StatusFilter, get_project_bug_tasks};
-use ratatui::backend::CrosstermBackend;
-use ratatui::{Terminal, widgets::ScrollbarState};
+use ratatui::{
+    Terminal,
+    widgets::{Row, ScrollbarState},
+};
+use ratatui::{backend::CrosstermBackend, widgets::Cell};
+use regex::Regex;
 use std::{
     io::{Empty, Write, stdout},
     sync::Arc,
@@ -36,6 +40,8 @@ use crate::{
     app::App,
     events::{QuitApp, handle_key_events},
 };
+
+const PROJECT: &str = "nova";
 
 #[derive(Debug)]
 enum LpMessage {
@@ -89,7 +95,8 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    app.get_bugs();
+    app.get_bugs(PROJECT.to_string());
+    let project_regexp = Regex::new(r#"#(\d+).*?OpenStack Compute \(nova\):\s+"([^"]+)""#).unwrap();
 
     let tick_rate = Duration::from_millis(120);
     let mut last_tick = Instant::now();
@@ -102,12 +109,7 @@ pub async fn run() -> anyhow::Result<()> {
             Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
             Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {}
             Ok(msg) => match msg {
-                LpMessage::Bugs(bugs) => {
-                    app.bug_table_items = bugs;
-                    app.spinner_enabled = false;
-                    app.bug_table_state.select(Some(0));
-                    app.bug_table_scrollbar_state = ScrollbarState::new(app.bug_table_items.len());
-                }
+                LpMessage::Bugs(bugs) => app.update_bugs(bugs, &project_regexp),
                 _ => unimplemented!(),
             },
         };

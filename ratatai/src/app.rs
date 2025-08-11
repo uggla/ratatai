@@ -2,10 +2,11 @@
 
 use google_ai_rs::Client;
 use launchpad_api_client::{BugTaskEntry, StatusFilter, get_project_bug_tasks};
-use ratatui::widgets::{ScrollbarState, TableState};
+use ratatui::widgets::{Cell, Row, ScrollbarState, TableState};
+use regex::Regex;
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tracing::{debug, error};
 
 use crate::{LpMessage, ui::SPINNER_LABELS};
@@ -22,19 +23,11 @@ pub enum ActivePanel {
     Right,
 }
 
-/// Represents a row in our "bugs" table
-#[derive(Debug)]
-pub struct Bug {
-    pub bug_id: u32,
-    pub date: String,
-    pub title: String,
-    pub description: String,
-}
-
 /// Represents the state of the TUI application.
 #[derive(Debug)]
 pub struct App {
     pub bug_table_items: Box<[BugTaskEntry]>,
+    pub bug_table_rows: Vec<Row<'static>>,
     pub bug_table_state: TableState,
     pub bug_table_scrollbar_state: ScrollbarState,
     pub bug_table_selected_index: Option<usize>,
@@ -67,8 +60,11 @@ impl App {
         let scrollbar_state = ScrollbarState::new(0);
         // let (launchpad_to_app_tx, launchpad_to_app_rx) = mpsc::channel::<LpMessage>(5);
 
+        let rows = Vec::new();
+
         App {
             bug_table_items: items,
+            bug_table_rows: rows,
             bug_table_state: table_state,
             bug_table_scrollbar_state: scrollbar_state,
             bug_table_selected_index: None,
@@ -154,14 +150,14 @@ impl App {
         self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
     }
 
-    pub fn get_bugs(&mut self) {
+    pub fn get_bugs(&mut self, project: String) {
         self.spinner_enabled = true;
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
         tokio::spawn(async move {
             debug!("Task to get bugs started");
 
-            match get_project_bug_tasks(&*client, "nova", Some(StatusFilter::New)).await {
+            match get_project_bug_tasks(&*client, &project, Some(StatusFilter::New)).await {
                 Ok(mut bug_tasks) => {
                     bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
 
@@ -180,5 +176,39 @@ impl App {
             }
             debug!("Task to get bugs completed");
         });
+    }
+
+    pub fn update_bugs(&mut self, bugs: Box<[BugTaskEntry]>, re: &Regex) {
+        self.bug_table_items = bugs;
+        self.bug_table_rows = self
+            .bug_table_items
+            .iter()
+            .map(|item: &BugTaskEntry| {
+                let height = 1;
+
+                let extract_from_title = |o| -> (String, String) {
+                    if let Some(caps) = re.captures(o) {
+                        let id = &caps[1];
+                        let title = &caps[2];
+                        (id.to_string(), title.to_string())
+                    } else {
+                        ("".to_string(), "".to_string())
+                    }
+                };
+
+                let (id, title) = extract_from_title(&item.title);
+
+                let cells = vec![
+                    Cell::from(id),
+                    // I think we can unwrap safely as I guess we always have a date_created
+                    Cell::from(item.date_created.unwrap().clone().date_naive().to_string()),
+                    Cell::from(title),
+                ];
+                Row::new(cells).height(height as u16).bottom_margin(1)
+            })
+            .collect();
+        self.bug_table_state.select(Some(0));
+        self.bug_table_scrollbar_state = ScrollbarState::new(self.bug_table_items.len());
+        self.spinner_enabled = false;
     }
 }
