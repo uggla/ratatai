@@ -208,11 +208,12 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
 
     let scrollbar_area = area.inner(Margin {
         vertical: 1,
-        horizontal: 1,
+        horizontal: 0,
     });
     let scrollbar_height = scrollbar_area.height as usize;
 
-    let wrapped_text = wrap(&current_display_text, (scrollbar_area.width) as usize);
+    let wrapped_text = wrap(&current_display_text, (scrollbar_area.width - 2) as usize);
+
     let wrapped_text: Vec<Line> = wrapped_text
         .iter()
         .map(|line| Line::from(line.to_string()))
