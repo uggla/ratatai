@@ -1,31 +1,25 @@
 // src/lib.rs
 
 use crossterm::{
+    ExecutableCommand,
     event::{self, Event as CrosstermEvent},
     execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use google_ai_rs::Client;
-use launchpad_api_client::{BugTaskEntry, LaunchpadError, StatusFilter, get_project_bug_tasks};
-use ratatui::{
-    Terminal,
-    widgets::{Row, ScrollbarState},
-};
-use ratatui::{backend::CrosstermBackend, widgets::Cell};
+use launchpad_api_client::{BugTaskEntry, LaunchpadError};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use regex::Regex;
 use std::{
-    io::{Empty, Write, stdout},
+    io::{Write, stdout},
     sync::Arc,
     time::Duration,
 };
 use tokio::{
-    sync::mpsc::{self, Sender},
-    time::{Instant, sleep},
+    sync::mpsc::{self},
+    time::Instant,
 };
-use tracing::{debug, error};
 
 // Import the modules we are going to create
 mod ai;
@@ -58,9 +52,8 @@ pub async fn run() -> anyhow::Result<()> {
         .expect("GOOGLE_API_KEY not set in .env file or environment variables");
 
     // Initialize Crossterm and Ratatui terminal
+    ExecutableCommand::execute(&mut stdout(), EnterAlternateScreen)?;
     enable_raw_mode()?;
-    execute!(stdout(), Clear(ClearType::All))?;
-    execute!(stdout(), EnterAlternateScreen)?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.hide_cursor()?;

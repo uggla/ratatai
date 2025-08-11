@@ -1,21 +1,16 @@
+use anyhow::bail;
 use crossterm::{
+    ExecutableCommand,
     event::{KeyCode, KeyEvent, KeyEventKind},
-    execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use google_ai_rs::GenerativeModel;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use std::{
-    env,
-    io::{Read, Write, stdout},
-    process::Command,
-    sync::Arc,
-};
+use std::{env, io::stdout, sync::Arc};
 use tempfile::NamedTempFile;
+use tokio::{fs::File, io::AsyncReadExt, process::Command};
+use tracing::error;
 
 use crate::{
     PROJECT,
@@ -51,10 +46,10 @@ pub async fn handle_key_events(
         if let QuitApp::Yes = match app.current_screen {
             Screen::BugList => match app.active_panel {
                 ActivePanel::Left => handle_bug_table(key, app)?,
-                ActivePanel::Right => handle_bug_description(key, app, terminal)?,
+                ActivePanel::Right => handle_bug_description(key, app, terminal).await?,
             },
             Screen::BugEditing => match app.active_panel {
-                ActivePanel::Left => handle_bug_description(key, app, terminal)?,
+                ActivePanel::Left => handle_bug_description(key, app, terminal).await?,
                 ActivePanel::Right => QuitApp::No,
             },
         } {
@@ -116,11 +111,10 @@ fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
         KeyCode::End => app.bug_table_go_to_end(),
         KeyCode::Char('r') => app.get_bugs(PROJECT.to_string()),
         KeyCode::Enter => {
-            app.bug_table_selected_index = app.bug_table_state.selected();
-            if let Some(index) = app.bug_table_selected_index {
+            if let Some(index) = app.bug_table_state.selected() {
                 if let Some(bug) = app.bug_table_items.get(index) {
                     let mut gemini_response = app.gemini_response.lock().unwrap();
-                    // *gemini_response = bug.description.clone();
+                    *gemini_response = bug.bug_link.clone();
                     app.bug_desc_scroll = 0;
                     app.bug_desc_scroll_to_end = false;
                 }
@@ -131,7 +125,7 @@ fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     Ok(QuitApp::No)
 }
 
-fn handle_bug_description(
+async fn handle_bug_description(
     key: KeyEvent,
     app: &mut App,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -189,40 +183,51 @@ fn handle_bug_description(
             // Edit the content
             let content_to_edit = app.gemini_response.lock().unwrap().clone();
 
-            let mut temp_file = NamedTempFile::new()?;
-            temp_file.write_all(content_to_edit.as_bytes())?;
-            let file_path = temp_file.path().to_path_buf();
+            // let mut temp_file = NamedTempFile::new()?;
+            // std::io::Write::write_all(&mut temp_file, content_to_edit.as_bytes())?;
+            // let file_path = temp_file.path().to_path_buf();
+
+            let (file_path, _file) = tokio::task::spawn_blocking({
+                let content = content_to_edit.to_owned();
+                move || {
+                    let mut temp = NamedTempFile::new()?;
+                    std::io::Write::write_all(&mut temp, content.as_bytes())?;
+                    let path = temp.path().to_owned();
+                    Ok::<_, std::io::Error>((path, temp))
+                }
+            })
+            .await??;
 
             // 1. Exit Ratatui mode
-            terminal.show_cursor()?;
-            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+            ExecutableCommand::execute(&mut stdout(), LeaveAlternateScreen)?;
             disable_raw_mode()?;
 
             // 2. Launch the external editor
             let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
-            let status = Command::new(&editor).arg(&file_path).status()?;
+            let status = Command::new(&editor).arg(&file_path).status().await?;
 
             if !status.success() {
-                eprintln!("The editor exited with an error: {:?}", status.code());
+                error!("The editor exited with an error: {:?}", status.code());
+                bail!("The editor exited with an error: {:?}", status.code());
             }
-
-            // 3. Re-enable Ratatui mode
-            enable_raw_mode()?;
-            execute!(stdout(), Clear(ClearType::All), EnterAlternateScreen)?;
 
             // Read the updated content from the temporary file
             let mut updated_content = String::new();
-            std::fs::File::open(&file_path)?.read_to_string(&mut updated_content)?;
+            let mut file = File::open(file_path).await?;
+            AsyncReadExt::read_to_string(&mut file, &mut updated_content).await?;
             {
                 // Update the application state with the new content
                 let mut response_guard = app.gemini_response.lock().unwrap();
                 *response_guard = updated_content;
             }
 
-            // Force a full cleanup and redraw of the TUI
+            // 3. Re-enable Ratatui mode
+            stdout().execute(EnterAlternateScreen)?;
+            enable_raw_mode()?;
             terminal.clear()?;
+
             terminal.draw(|f| draw_ui(f, app))?; // Redraw with the new content
-            terminal.backend_mut().flush()?;
+            std::io::Write::flush(&mut terminal.backend_mut())?;
             terminal.hide_cursor()?;
         }
         _ => {}
