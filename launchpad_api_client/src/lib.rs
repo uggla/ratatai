@@ -113,6 +113,17 @@ pub struct BugTaskEntry {
     pub http_etag: String,
 }
 
+impl BugTaskEntry {
+    pub fn get_id(&self) -> u32 {
+        self.self_link
+            .split('/')
+            .next_back()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LaunchpadBug {
     pub self_link: String,
