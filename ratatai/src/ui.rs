@@ -97,14 +97,14 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
                 "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'r' to refresh list, 'Enter' to open bug"
             }
             ActivePanel::Right => {
-                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'a' for AI generation, 'r' to reply to this bug"
+                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'Enter' to reply to this bug"
             }
         },
         Screen::BugEditing => match app.active_panel {
             ActivePanel::Left => {
-                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'a' for AI generation, 'r' to reply to this bug"
+                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'Enter' to craft a reply to this bug"
             }
-            ActivePanel::Right => "tbd",
+            ActivePanel::Right => "'e' to edit, 'Enter' to ask chat to refine this bug",
         },
     };
     let command_paragraph = Paragraph::new(command_text)
@@ -191,7 +191,7 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
         "No bug selected".to_string()
     };
 
-    let right_panel_border_style = match app.current_screen {
+    let panel_border_style = match app.current_screen {
         Screen::BugList => match app.active_panel {
             ActivePanel::Right => Style::default().fg(Color::Green),
             _ => Style::default().fg(Color::White),
@@ -225,16 +225,16 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
     let max_scroll = content_length.saturating_sub(scrollbar_height) as u16;
     app.bug_desc_scroll = app.bug_desc_scroll.min(max_scroll);
 
-    let gemini_paragraph = Paragraph::new(wrapped_text)
+    let bug_description_paragraph = Paragraph::new(wrapped_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
-                .border_style(right_panel_border_style),
+                .border_style(panel_border_style),
         )
         .scroll((app.bug_desc_scroll, 0));
 
-    f.render_widget(gemini_paragraph, area);
+    f.render_widget(bug_description_paragraph, area);
 
     let mut bug_desc_scrollbar_state = ScrollbarState::new(content_length)
         .viewport_content_length(scrollbar_height)
@@ -252,13 +252,11 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_bug_reply(f: &mut Frame, app: &mut App, area: Rect) {
-    let lorem_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-
-    let lorem_paragraph = Paragraph::new(lorem_text)
+    let bug_reply_paragraph = Paragraph::new(app.bug_reply_text.clone())
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Lorem Ipsum")
+                .title("Bug reply")
                 .border_style(match app.active_panel {
                     ActivePanel::Right => Style::default().fg(Color::Green),
                     _ => Style::default().fg(Color::White),
@@ -266,5 +264,5 @@ fn draw_bug_reply(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
-    f.render_widget(lorem_paragraph, area);
+    f.render_widget(bug_reply_paragraph, area);
 }

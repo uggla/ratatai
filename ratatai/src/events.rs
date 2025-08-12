@@ -7,16 +7,15 @@ use crossterm::{
 use google_ai_rs::GenerativeModel;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use std::{env, io::stdout, sync::Arc};
+use std::{env, sync::Arc};
 use tempfile::NamedTempFile;
 use tokio::{fs::File, io::AsyncReadExt, process::Command};
 use tracing::error;
 
 use crate::{
     PROJECT,
-    ai::get_gemini_response,
+    ai::{get_gemini_response, get_initial_prompt},
     app::{ActivePanel, App, Screen},
-    ui::draw_ui,
 };
 
 #[derive(Debug, PartialEq)]
@@ -50,7 +49,7 @@ pub async fn handle_key_events(
             },
             Screen::BugEditing => match app.active_panel {
                 ActivePanel::Left => handle_bug_description(key, app, terminal).await?,
-                ActivePanel::Right => QuitApp::No,
+                ActivePanel::Right => handle_bug_reply(key, app, terminal).await?,
             },
         } {
             return Ok(QuitApp::Yes);
@@ -86,7 +85,7 @@ fn handle_bug_editing_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Resul
     match key.code {
         KeyCode::Esc => {
             app.current_screen = Screen::BugList;
-            app.active_panel = ActivePanel::Right;
+            app.active_panel = ActivePanel::Left;
         }
         KeyCode::Tab => {
             if app.active_panel == ActivePanel::Right {
@@ -151,10 +150,6 @@ async fn handle_bug_description(
         KeyCode::End => {
             app.bug_desc_scroll_to_end = true;
         }
-        KeyCode::Char('r') => {
-            app.current_screen = Screen::BugEditing;
-            app.active_panel = ActivePanel::Left;
-        }
         KeyCode::Char('v') => {
             if let Some(index) = app.bug_table_state.selected() {
                 if let Some(bug_entry) = app.bug_table_items.get(index) {
@@ -191,53 +186,114 @@ async fn handle_bug_description(
             // Ai request
         }
         KeyCode::Char('e') => {
-            // Edit the content
-            let content_to_edit = app.gemini_response.lock().unwrap().clone();
-
-            let (file_path, _file) = tokio::task::spawn_blocking({
-                let content = content_to_edit.to_owned();
-                move || {
-                    let mut temp = NamedTempFile::new()?;
-                    std::io::Write::write_all(&mut temp, content.as_bytes())?;
-                    let path = temp.path().to_owned();
-                    Ok::<_, std::io::Error>((path, temp))
-                }
-            })
-            .await??;
-
-            // 1. Exit Ratatui mode
-            ExecutableCommand::execute(&mut stdout(), LeaveAlternateScreen)?;
-            disable_raw_mode()?;
-
-            // 2. Launch the external editor
-            let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
-            let status = Command::new(&editor).arg(&file_path).status().await?;
-
-            if !status.success() {
-                error!("The editor exited with an error: {:?}", status.code());
-                bail!("The editor exited with an error: {:?}", status.code());
-            }
-
-            // Read the updated content from the temporary file
-            let mut updated_content = String::new();
-            let mut file = File::open(file_path).await?;
-            AsyncReadExt::read_to_string(&mut file, &mut updated_content).await?;
+            let initial_content = { app.gemini_response.lock().unwrap().clone() };
+            let updated = edit_content_in_editor(terminal, initial_content).await?;
             {
-                // Update the application state with the new content
                 let mut response_guard = app.gemini_response.lock().unwrap();
-                *response_guard = updated_content;
+                *response_guard = updated;
             }
+        }
+        KeyCode::Enter => {
+            if app.current_screen == Screen::BugList {
+                app.current_screen = Screen::BugEditing;
+                app.active_panel = ActivePanel::Left;
+                app.bug_reply_text = "No bug replied yet.".to_string();
+            } else {
+                let bug_guard = { app.gemini_response.lock().unwrap().clone() };
 
-            // 3. Re-enable Ratatui mode
-            stdout().execute(EnterAlternateScreen)?;
-            enable_raw_mode()?;
-            terminal.clear()?;
-
-            terminal.draw(|f| draw_ui(f, app))?; // Redraw with the new content
-            std::io::Write::flush(&mut terminal.backend_mut())?;
-            terminal.hide_cursor()?;
+                let prompt = format!("{}\n{}", get_initial_prompt(), bug_guard);
+                app.app_sender.send(prompt).await?;
+                app.spinner_enabled = true;
+            }
         }
         _ => {}
     }
     Ok(QuitApp::No)
+}
+
+async fn handle_bug_reply(
+    key: KeyEvent,
+    app: &mut App,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> anyhow::Result<QuitApp> {
+    match key.code {
+        // KeyCode::Up => {
+        //     app.bug_desc_scroll = app.bug_desc_scroll.saturating_sub(1);
+        //     app.bug_desc_scroll_to_end = false;
+        // }
+        // KeyCode::Down => {
+        //     app.bug_desc_scroll = app.bug_desc_scroll.saturating_add(1);
+        //     app.bug_desc_scroll_to_end = false;
+        // }
+        // KeyCode::PageUp => {
+        //     app.bug_desc_scroll = app.bug_desc_scroll.saturating_sub(10);
+        //     app.bug_desc_scroll_to_end = false;
+        // }
+        // KeyCode::PageDown => {
+        //     app.bug_desc_scroll = app.bug_desc_scroll.saturating_add(10);
+        //     app.bug_desc_scroll_to_end = false;
+        // }
+        // KeyCode::Home => {
+        //     app.bug_desc_scroll = 0;
+        //     app.bug_desc_scroll_to_end = false;
+        // }
+        // KeyCode::End => {
+        //     app.bug_desc_scroll_to_end = true;
+        // }
+        KeyCode::Enter => {
+            app.app_sender.send(app.bug_reply_text.clone()).await?;
+            app.spinner_enabled = true;
+        }
+        KeyCode::Char('e') => {
+            let initial_content = app.bug_reply_text.clone();
+            let updated = edit_content_in_editor(terminal, initial_content).await?;
+            app.bug_reply_text = updated;
+        }
+        _ => {}
+    }
+    Ok(QuitApp::No)
+}
+
+async fn edit_content_in_editor<S>(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    content: S,
+) -> anyhow::Result<String>
+where
+    S: Into<String>,
+{
+    // Prepare the file with the given content
+    let (file_path, _file) = tokio::task::spawn_blocking({
+        let content = content.into();
+        move || {
+            let mut temp = NamedTempFile::new()?;
+            std::io::Write::write_all(&mut temp, content.as_bytes())?;
+            let path = temp.path().to_owned();
+            Ok::<_, std::io::Error>((path, temp))
+        }
+    })
+    .await??;
+
+    // Exit Ratatui mode
+    ExecutableCommand::execute(&mut std::io::stdout(), LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+
+    // Launch the external editor
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+    let status = Command::new(&editor).arg(&file_path).status().await?;
+    if !status.success() {
+        bail!("The editor exited with an error: {:?}", status.code());
+    }
+
+    // Read updated content
+    let mut updated_content = String::new();
+    let mut file = File::open(file_path).await?;
+    AsyncReadExt::read_to_string(&mut file, &mut updated_content).await?;
+
+    // Re-enable Ratatui mode
+    std::io::stdout().execute(EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    terminal.clear()?;
+    terminal.hide_cursor()?;
+
+    Ok(updated_content)
 }

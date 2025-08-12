@@ -1,5 +1,12 @@
 // src/lib.rs
 
+// Import the modules we are going to create
+mod ai;
+mod app;
+mod events;
+mod join_monitor;
+mod ui;
+
 use anyhow::bail;
 use crossterm::{
     ExecutableCommand,
@@ -13,26 +20,19 @@ use ratatui::backend::CrosstermBackend;
 use regex::Regex;
 use std::{
     io::{Write, stdout},
-    sync::Arc,
     time::Duration,
 };
 use tokio::{
-    sync::mpsc::{self},
+    sync::mpsc::{self, error},
     time::Instant,
 };
-
-// Import the modules we are going to create
-mod ai;
-mod app;
-mod events;
-mod ui;
-
-use ai::get_gemini_response_static;
+use tracing::{debug, error, info};
 use ui::draw_ui;
 
 use crate::{
     app::App,
     events::{QuitApp, handle_key_events},
+    join_monitor::{JoinHandleMonitor, check_monitor},
 };
 
 const PROJECT: &str = "nova";
@@ -47,38 +47,52 @@ enum LpMessage {
 /// Main function of the TUI application.
 pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
     dotenv::dotenv().ok();
-    // The API key is not strictly necessary at the moment, but we keep it for later.
     let api_key = std::env::var("GOOGLE_API_KEY")?;
 
     let (lp_sender, mut lp_receiver) = mpsc::channel::<LpMessage>(5);
+    let (app_sender, mut app_receiver) = mpsc::channel::<String>(5);
+    let (chat_sender, chat_receiver) = mpsc::channel::<String>(5);
 
     // Create a new instance of our application
     let mut app = App::new(
         Client::new(api_key.into()).await?,
         launchpad_api_client::client::ReqwestClient::new(),
         lp_sender,
+        app_sender,
+        chat_receiver,
     );
 
-    // let client_for_spawn = Arc::clone(&client);
-    let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
+    // Start the asynchronous task for gemini chat"
+    let client = app.gemini_client.clone();
 
-    // Start the asynchronous task for the "Gemini response" (static for now)
-    tokio::spawn(async move {
-        // let model = GenerativeModel::new(&client_for_spawn, "gemini-2.5-flash");
-        // match get_gemini_response(model).await {
-        match get_gemini_response_static().await {
-            Ok(response) => {
-                let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                // *response_guard = response;
-                // *response_guard = response.text();
-                *response_guard = response;
+    let chat_task = tokio::spawn(async move {
+        let chat = client.generative_model("gemini-2.5-flash");
+        let mut session = chat.start_chat();
+        info!("Chat started");
+
+        while let Some(msg) = app_receiver.recv().await {
+            info!("Chat message received");
+            debug!("Message: {msg}");
+
+            match session.send_message(msg).await {
+                Ok(response) => {
+                    if let Err(e) = chat_sender.send(response.text()).await {
+                        error!("Error sending message: {e}");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Error calling gemini: {e}");
+                    break;
+                }
             }
-            Err(e) => {
-                let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                *response_guard = format!("Error while fetching the response: {e}");
-            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
+
+        info!("Chat terminated");
     });
+
+    let mut monitor = JoinHandleMonitor::new(chat_task);
 
     app.get_bugs(PROJECT.to_string());
     let project_regexp = Regex::new(r#"#(\d+).*?OpenStack Compute \(nova\):\s+"([^"]+)""#).unwrap();
@@ -87,18 +101,34 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
     let mut last_tick = Instant::now();
     // Main application loop
     loop {
+        if check_monitor(&mut monitor) {
+            break;
+        }
         // Draw the user interface by passing the reference to the app object
         terminal.draw(|f| draw_ui(f, &mut app))?;
 
+        // Manage message from launchpad
         match lp_receiver.try_recv() {
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
-            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {}
+            Err(error::TryRecvError::Empty) => {}
+            Err(error::TryRecvError::Disconnected) => {}
             Ok(msg) => match msg {
                 LpMessage::Bugs(bugs) => app.update_bugs(bugs, &project_regexp),
                 LpMessage::Bug(bug) => app.update_bug(*bug),
                 LpMessage::Error(e) => bail!(e),
             },
         };
+
+        // Manage message from gemini chat
+        match app.chat_receiver.try_recv() {
+            Err(error::TryRecvError::Empty) => {}
+            Err(error::TryRecvError::Disconnected) => {}
+            Ok(msg) => {
+                info!("Chat response received");
+                debug!("Response: {msg}");
+                app.update_bug_reply(msg);
+            }
+        };
+
         // Handle input events
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {

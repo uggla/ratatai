@@ -8,26 +8,26 @@ use ratatui::widgets::{Cell, Row, ScrollbarState, TableState};
 use regex::Regex;
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
 use crate::{LpMessage, ui::SPINNER_LABELS};
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Screen {
+pub(crate) enum Screen {
     BugList,
     BugEditing,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ActivePanel {
+pub(crate) enum ActivePanel {
     Left,
     Right,
 }
 
 /// Represents the state of the TUI application.
 #[derive(Debug)]
-pub struct App {
+pub(crate) struct App {
     pub bug_table_items: Box<[BugTaskEntry]>,
     pub bug_table_rows: Vec<Row<'static>>,
     pub bug_table_state: TableState,
@@ -47,14 +47,19 @@ pub struct App {
     pub launchpad_client: Arc<launchpad_api_client::client::ReqwestClient>,
     pub gemini_response: Arc<Mutex<String>>,
     pub lp_sender: Sender<LpMessage>,
+    pub app_sender: Sender<String>,
+    pub chat_receiver: Receiver<String>,
+    pub bug_reply_text: String,
 }
 
 impl App {
     /// Creates a new instance of the application with the initial state.
-    pub fn new(
+    pub(crate) fn new(
         gemini_client: Client,
         launchpad_client: launchpad_api_client::client::ReqwestClient,
         lp_sender: Sender<LpMessage>,
+        app_sender: Sender<String>,
+        chat_receiver: Receiver<String>,
     ) -> App {
         let items = Box::new([]);
         let mut table_state = TableState::default();
@@ -77,13 +82,16 @@ impl App {
             spinner_label_index: 0,
             gemini_client: Arc::new(gemini_client),
             launchpad_client: Arc::new(launchpad_client),
-            gemini_response: Arc::new(Mutex::new("Loading response from Gemini...".to_string())),
+            gemini_response: Arc::new(Mutex::new(String::new())),
             lp_sender,
+            app_sender,
+            chat_receiver,
+            bug_reply_text: String::new(),
         }
     }
 
     /// Moves the selection up in the table.
-    pub fn bug_table_previous_item(&mut self) {
+    pub(crate) fn bug_table_previous_item(&mut self) {
         let i = match self.bug_table_state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -99,7 +107,7 @@ impl App {
     }
 
     /// Moves the selection down in the table.
-    pub fn bug_table_next_item(&mut self) {
+    pub(crate) fn bug_table_next_item(&mut self) {
         let i = match self.bug_table_state.selected() {
             Some(i) => {
                 if i >= self.bug_table_items.len() - 1 {
@@ -114,7 +122,7 @@ impl App {
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
-    pub fn bug_table_page_up_item(&mut self) {
+    pub(crate) fn bug_table_page_up_item(&mut self) {
         let i = match self.bug_table_state.selected() {
             Some(i) => i.saturating_sub(10),
             None => 0,
@@ -123,7 +131,7 @@ impl App {
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
-    pub fn bug_table_page_down_item(&mut self) {
+    pub(crate) fn bug_table_page_down_item(&mut self) {
         let i = match self.bug_table_state.selected() {
             Some(i) => (i + 10).min(self.bug_table_items.len() - 1),
             None => 0,
@@ -132,25 +140,25 @@ impl App {
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
-    pub fn bug_table_go_to_start(&mut self) {
+    pub(crate) fn bug_table_go_to_start(&mut self) {
         self.bug_table_state.select(Some(0));
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(0);
     }
 
-    pub fn bug_table_go_to_end(&mut self) {
+    pub(crate) fn bug_table_go_to_end(&mut self) {
         let i = self.bug_table_items.len() - 1;
         self.bug_table_state.select(Some(i));
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
     }
 
     /// Toggles the spinner display in the bottom bar.
-    pub fn toggle_spinner(&mut self) {
+    pub(crate) fn toggle_spinner(&mut self) {
         self.spinner_enabled = !self.spinner_enabled;
         // Change the label with each 's' activation
         self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
     }
 
-    pub fn get_bugs(&mut self, project: String) {
+    pub(crate) fn get_bugs(&mut self, project: String) {
         self.spinner_enabled = true;
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
@@ -178,7 +186,7 @@ impl App {
         });
     }
 
-    pub fn update_bugs(&mut self, bugs: Box<[BugTaskEntry]>, re: &Regex) {
+    pub(crate) fn update_bugs(&mut self, bugs: Box<[BugTaskEntry]>, re: &Regex) {
         self.bug_table_items = bugs;
         self.bug_table_rows = self
             .bug_table_items
@@ -212,7 +220,7 @@ impl App {
         self.spinner_enabled = false;
     }
 
-    pub fn get_bug(&mut self, bug_id: u32) {
+    pub(crate) fn get_bug(&mut self, bug_id: u32) {
         self.spinner_enabled = true;
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
@@ -235,12 +243,17 @@ impl App {
         });
     }
 
-    pub fn update_bug(&mut self, bug: LaunchpadBug) {
+    pub(crate) fn update_bug(&mut self, bug: LaunchpadBug) {
         self.current_bug = Some(bug);
         let mut response_guard = self.gemini_response.lock().unwrap();
         *response_guard = self.current_bug.as_ref().unwrap().description.clone();
         self.bug_desc_scroll = 0;
         self.bug_desc_scroll_to_end = false;
         self.spinner_enabled = false;
+    }
+
+    pub(crate) fn update_bug_reply(&mut self, msg: String) {
+        self.bug_reply_text = msg;
+        self.spinner_enabled = false
     }
 }
