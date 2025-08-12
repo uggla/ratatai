@@ -78,16 +78,24 @@ on that compute node. Attach the logs to this bug report.
 *** end template ***
 
 Link bug reporting template: https://wiki.openstack.org/wiki/Nova/BugsTeam/BugReportTemplate
-Current fully supported version of Openstack: Flamingo (master / 2025.2), Caracal (2025.2)
+Current fully supported version of Openstack: 2025.2 Flamingo, 2025.1 Epoxy, 2024.2 Dalmatian, 2024.1 Caracal
+Link supported realease: https://releases.openstack.org/
 
 Instruction to craft the answer:
 1- Answer must be in plain text.
 2- You must thank the reporter for submitting the bug.
-3- If informations required in the template are missing in the bug report, mention what is missing.
-4- Provide the link to the template for reference.
-5- Explain that we will mark this bug as 'Incomplete', and ask the reporter to set it back to 'New' once updated.
+3- If version is not supported, say so to the reporter, do not give the list of supported version only the link.
+4- If informations required in the template are missing in the bug report, mention what is missing.
+5- Provide the link to the template for reference.
+6- If the bug is 'Incomplete':
+   Explain that we will mark this bug as 'Incomplete', and ask the reporter to set it back to 'New' once updated.
    Here is an example of what you can write:
    For now, we’ll mark this bug as Invalid, please set it back to 'New' once updated.
+   If the bug is 'Invalid':
+   Explain that we will mark this bug as 'Invalid'.
+   Here is an example of what you can write:
+   For these reasons, and given the use of an unsupported OpenStack version, we are marking this bug as **'Invalid'**.
+   If you still believe this is a Nova bug and you can reproduce it on a supported OpenStack version, please feel free to update this report with the necessary details (referencing our bug reporting template: https://wiki.openstack.org/wiki/Nova/BugsTeam/BugReportTemplate) and set its status back to 'New'.
 
 Here is the bug reported:".to_string()
 }
