@@ -184,19 +184,11 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
     // causing severe misalignment and scroll glitches.
     let current_display_text = current_display_text.replace('\t', " ");
 
-    let gemini_title = if let Some(index) = app.bug_table_state.selected() {
-        if let Some(bug) = app.bug_table_items.get(index) {
-            let truncated_title = if bug.title.chars().count() > 40 {
-                format!("{}...", bug.title.chars().take(40).collect::<String>())
-            } else {
-                bug.title.clone()
-            };
-            format!("{}-{}", bug.title, truncated_title)
-        } else {
-            "Gemini Response".to_string()
-        }
+    let title = if let Some(bug) = &app.current_bug {
+        let title_trunc: String = bug.title.chars().take(64).collect();
+        format!("Bug '{}', {}...", bug.id, title_trunc)
     } else {
-        "Gemini Response".to_string()
+        "No bug selected".to_string()
     };
 
     let right_panel_border_style = match app.current_screen {
@@ -237,7 +229,7 @@ fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(gemini_title)
+                .title(title)
                 .border_style(right_panel_border_style),
         )
         .scroll((app.bug_desc_scroll, 0));
