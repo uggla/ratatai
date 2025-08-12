@@ -113,10 +113,7 @@ async fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitAp
         KeyCode::Enter => {
             if let Some(index) = app.bug_table_state.selected() {
                 if let Some(bug_entry) = app.bug_table_items.get(index) {
-                    let mut gemini_response = app.gemini_response.lock().unwrap();
-                    *gemini_response = bug_entry.bug_link.clone();
-                    app.bug_desc_scroll = 0;
-                    app.bug_desc_scroll_to_end = false;
+                    app.get_bug(bug_entry.get_id());
                 }
             }
         }

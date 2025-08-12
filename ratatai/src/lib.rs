@@ -1,9 +1,9 @@
 // src/lib.rs
 
+use anyhow::bail;
 use crossterm::{
     ExecutableCommand,
     event::{self, Event as CrosstermEvent},
-    execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use google_ai_rs::Client;
@@ -45,18 +45,10 @@ enum LpMessage {
 }
 
 /// Main function of the TUI application.
-pub async fn run() -> anyhow::Result<()> {
+pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     // The API key is not strictly necessary at the moment, but we keep it for later.
-    let api_key = std::env::var("GOOGLE_API_KEY")
-        .expect("GOOGLE_API_KEY not set in .env file or environment variables");
-
-    // Initialize Crossterm and Ratatui terminal
-    ExecutableCommand::execute(&mut stdout(), EnterAlternateScreen)?;
-    enable_raw_mode()?;
-
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-    terminal.hide_cursor()?;
+    let api_key = std::env::var("GOOGLE_API_KEY")?;
 
     let (lp_sender, mut lp_receiver) = mpsc::channel::<LpMessage>(5);
 
@@ -103,14 +95,15 @@ pub async fn run() -> anyhow::Result<()> {
             Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {}
             Ok(msg) => match msg {
                 LpMessage::Bugs(bugs) => app.update_bugs(bugs, &project_regexp),
-                _ => unimplemented!(),
+                LpMessage::Bug(bug) => app.update_bug(*bug),
+                LpMessage::Error(e) => bail!(e),
             },
         };
         // Handle input events
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             if let CrosstermEvent::Key(key) = event::read()? {
-                let exit = handle_key_events(key, &mut app, &mut terminal).await?;
+                let exit = handle_key_events(key, &mut app, terminal).await?;
                 if exit == QuitApp::Yes {
                     break;
                 }
@@ -120,11 +113,23 @@ pub async fn run() -> anyhow::Result<()> {
             last_tick = Instant::now();
         }
     }
-    // Final cleanup before exiting
+    Ok(())
+}
+
+pub fn exit_gui(
+    mut terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> Result<(), anyhow::Error> {
     disable_raw_mode()?;
-    execute!(stdout(), LeaveAlternateScreen)?;
+    ExecutableCommand::execute(&mut stdout(), LeaveAlternateScreen)?;
     stdout().flush()?;
     terminal.show_cursor()?;
-
     Ok(())
+}
+
+pub fn start_gui() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, anyhow::Error> {
+    ExecutableCommand::execute(&mut stdout(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    terminal.hide_cursor()?;
+    Ok(terminal)
 }

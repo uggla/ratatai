@@ -1,7 +1,8 @@
 // src/main.rs
 
+use anyhow::bail;
 // Import everything public from our 'tui_app' crate (which will be defined in lib.rs)
-use ratatai::run;
+use ratatai::{exit_gui, run, start_gui};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[tokio::main]
@@ -23,8 +24,19 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Application starting");
 
+    // Initialize Crossterm and Ratatui terminal
+    let mut terminal = start_gui()?;
     // Call the main function of our application defined in lib.rs
-    run().await?;
+    match run(&mut terminal).await {
+        Ok(_) => {
+            exit_gui(terminal)?;
+        }
+        Err(e) => {
+            // Attempt to restore terminal to display the error
+            exit_gui(terminal)?;
+            bail!(e);
+        }
+    }
 
     tracing::info!("Application ending");
 

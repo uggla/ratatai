@@ -1,13 +1,15 @@
 // src/app.rs
 
 use google_ai_rs::Client;
-use launchpad_api_client::{BugTaskEntry, StatusFilter, get_project_bug_tasks};
+use launchpad_api_client::{
+    BugTaskEntry, LaunchpadBug, StatusFilter, get_bug as lp_get_bug, get_project_bug_tasks,
+};
 use ratatui::widgets::{Cell, Row, ScrollbarState, TableState};
 use regex::Regex;
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, error};
+use tracing::{error, info};
 
 use crate::{LpMessage, ui::SPINNER_LABELS};
 
@@ -34,6 +36,8 @@ pub struct App {
     pub current_screen: Screen,
     pub bug_desc_scroll: u16,
     pub bug_desc_scroll_to_end: bool,
+    pub current_bug: Option<LaunchpadBug>,
+    /// Whether the spinner in the bottom bar is enabled (toggled by 's')
     pub spinner_enabled: bool,
     /// Stateful state for spinner animation
     pub spinner_state: ThrobberState,
@@ -42,7 +46,6 @@ pub struct App {
     pub gemini_client: Arc<Client>,
     pub launchpad_client: Arc<launchpad_api_client::client::ReqwestClient>,
     pub gemini_response: Arc<Mutex<String>>,
-    /// Whether the spinner in the bottom bar is enabled (toggled by 's')
     pub lp_sender: Sender<LpMessage>,
 }
 
@@ -57,8 +60,6 @@ impl App {
         let mut table_state = TableState::default();
         table_state.select(None);
         let scrollbar_state = ScrollbarState::new(0);
-        // let (launchpad_to_app_tx, launchpad_to_app_rx) = mpsc::channel::<LpMessage>(5);
-
         let rows = Vec::new();
 
         App {
@@ -70,6 +71,7 @@ impl App {
             current_screen: Screen::BugList,
             bug_desc_scroll: 0,
             bug_desc_scroll_to_end: false,
+            current_bug: None,
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
             spinner_label_index: 0,
@@ -153,7 +155,7 @@ impl App {
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
         tokio::spawn(async move {
-            debug!("Task to get bugs started");
+            info!("Task to get bugs started");
 
             match get_project_bug_tasks(&*client, &project, Some(StatusFilter::New)).await {
                 Ok(mut bug_tasks) => {
@@ -172,7 +174,7 @@ impl App {
                     }
                 }
             }
-            debug!("Task to get bugs completed");
+            info!("Task to get bugs completed");
         });
     }
 
@@ -207,6 +209,38 @@ impl App {
             .collect();
         self.bug_table_state.select(Some(0));
         self.bug_table_scrollbar_state = ScrollbarState::new(self.bug_table_items.len());
+        self.spinner_enabled = false;
+    }
+
+    pub fn get_bug(&mut self, bug_id: u32) {
+        self.spinner_enabled = true;
+        let sender = self.lp_sender.clone();
+        let client = self.launchpad_client.clone();
+        tokio::spawn(async move {
+            info!("Task to get bug started");
+
+            match lp_get_bug(&*client, bug_id).await {
+                Ok(bug) => {
+                    if let Err(e) = sender.send(LpMessage::Bug(bug.into())).await {
+                        error!("Fail to send message, error {e}");
+                    }
+                }
+                Err(e) => {
+                    if let Err(e) = sender.send(LpMessage::Error(e)).await {
+                        error!("Fail to send message, error {e}");
+                    }
+                }
+            }
+            info!("Task to get bug completed");
+        });
+    }
+
+    pub fn update_bug(&mut self, bug: LaunchpadBug) {
+        self.current_bug = Some(bug);
+        let mut response_guard = self.gemini_response.lock().unwrap();
+        *response_guard = self.current_bug.as_ref().unwrap().description.clone();
+        self.bug_desc_scroll = 0;
+        self.bug_desc_scroll_to_end = false;
         self.spinner_enabled = false;
     }
 }
