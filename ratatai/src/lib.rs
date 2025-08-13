@@ -46,7 +46,7 @@ enum LpMessage {
 
 /// Main function of the TUI application.
 pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let api_key = std::env::var("GOOGLE_API_KEY")?;
 
     let (lp_sender, mut lp_receiver) = mpsc::channel::<LpMessage>(5);
@@ -55,7 +55,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
 
     // Create a new instance of our application
     let mut app = App::new(
-        Client::new(api_key.into()).await?,
+        Client::new(api_key).await?,
         launchpad_api_client::client::ReqwestClient::new(),
         lp_sender,
         app_sender,

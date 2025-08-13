@@ -5,12 +5,11 @@ edition = "2024"
 
 [dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"] }
-dotenv = "0.15.0"
-google-ai-rs = "0.1.1"
+dotenvy = "0.15.7"
+google-ai-rs = "0.1.2"
 ratatui = "0.29.0"
-serde = { version = "1.0.219", features = ["derive"] }
 tempfile = "3.20.0"
-textwrap = "0.16.0"
+textwrap = "0.16.2"
 chrono = "0.4.41"
 throbber-widgets-tui = "0.8.0"
 tokio = { version = "1.47.1", features = ["full"] }
@@ -21,5 +20,5 @@ tracing-subscriber = { version = "0.3.19", features = [
   "env-filter",
 ] }
 tracing-appender = "0.2.3"
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 regex = "1.11.1"
