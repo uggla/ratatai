@@ -94,17 +94,17 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let command_text = match app.current_screen {
         Screen::BugList => match app.active_panel {
             ActivePanel::Left => {
-                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'r' to refresh list, 'Enter' to open bug"
+                "↑↓ PgUp/PgDown Home/End: navigate, 'r': refresh, Enter: select bug, Tab: switch panel"
             }
             ActivePanel::Right => {
-                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'Enter' to reply to this bug"
+                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open in browser, 'e': edit, Enter: reply, Tab: switch panel"
             }
         },
         Screen::BugEditing => match app.active_panel {
             ActivePanel::Left => {
-                "Tab selection, ↑↓ PgUp/PgDown Home/End to navigate, 'e' to edit, 'Enter' to craft a reply to this bug"
+                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open browser, 'e': edit, Enter: AI prompt, Tab: switch, Esc: back"
             }
-            ActivePanel::Right => "'e' to edit, 'Enter' to ask chat to refine this bug",
+            ActivePanel::Right => "'e': edit reply, Enter: send for AI processing, Tab: switch panel, Esc: back to list",
         },
     };
     let command_paragraph = Paragraph::new(command_text)
