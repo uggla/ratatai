@@ -1,4 +1,11 @@
 /target
 .env
 GEMINI.md
+AGENTS.md
+CLAUDE.md
+nene
 logs
+.cache/
+.claude/
+.local/
+2025-08-25-command-messageinit-is-analyzing-your-codebase.txt
