@@ -131,14 +131,13 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
 
         // Handle input events
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)? {
-            if let CrosstermEvent::Key(key) = event::read()? {
+        if event::poll(timeout)?
+            && let CrosstermEvent::Key(key) = event::read()? {
                 let exit = handle_key_events(key, &mut app, terminal).await?;
                 if exit == QuitApp::Yes {
                     break;
                 }
             }
-        }
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
         }
