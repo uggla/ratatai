@@ -46,6 +46,16 @@ to maintain UI responsiveness during network operations.
 The modular design separates concerns between the API client, TUI components,
 and AI integration, allowing for easy extension and testing.
 
+## Screenshots
+
+### Bug List and Details View
+![Bug Selection](screenshots/bug_selection.png)
+*Main interface showing the bug list on the left and detailed bug information on the right. Navigate through bugs and view their full descriptions and comments.*
+
+### AI-Assisted Bug Response
+![Bug Answer](screenshots/bug_answer.png)
+*Bug editing screen where you can craft AI-assisted responses. The left panel shows bug details while the right panel displays the generated response for further editing.*
+
 ## How to Build
 
 To build and run ratatai, you need the Rust toolchain installed. You can
