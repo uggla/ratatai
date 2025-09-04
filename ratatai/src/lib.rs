@@ -4,7 +4,6 @@
 mod ai;
 mod app;
 mod events;
-mod join_monitor;
 mod ui;
 
 use anyhow::bail;
@@ -22,17 +21,17 @@ use std::{
     io::{Write, stdout},
     time::Duration,
 };
+
 use tokio::{
     sync::mpsc::{self, error},
     time::Instant,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use ui::draw_ui;
 
 use crate::{
     app::App,
     events::{QuitApp, handle_key_events},
-    join_monitor::{JoinHandleMonitor, check_monitor},
 };
 
 const PROJECT: &str = "nova";
@@ -92,8 +91,6 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
         info!("Chat terminated");
     });
 
-    let mut monitor = JoinHandleMonitor::new(chat_task);
-
     app.get_bugs(PROJECT.to_string());
     let project_regexp = Regex::new(r#"#(\d+).*?OpenStack Compute \(nova\):\s+"([^"]+)""#).unwrap();
 
@@ -101,8 +98,8 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
     let mut last_tick = Instant::now();
     // Main application loop
     loop {
-        if check_monitor(&mut monitor) {
-            break;
+        if chat_task.is_finished() {
+            return chat_task_result_to_err(chat_task.await);
         }
         // Draw the user interface by passing the reference to the app object
         terminal.draw(|f| draw_ui(f, &mut app))?;
@@ -132,17 +129,36 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
         // Handle input events
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)?
-            && let CrosstermEvent::Key(key) = event::read()? {
-                let exit = handle_key_events(key, &mut app, terminal).await?;
-                if exit == QuitApp::Yes {
-                    break;
-                }
+            && let CrosstermEvent::Key(key) = event::read()?
+        {
+            let exit = handle_key_events(key, &mut app, terminal).await?;
+            if exit == QuitApp::Yes {
+                break;
             }
+        }
+
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
         }
     }
     Ok(())
+}
+
+fn chat_task_result_to_err(res: Result<(), tokio::task::JoinError>) -> anyhow::Result<()> {
+    match res {
+        Ok(_) => {
+            warn!("⚠️ Chat task stopped.");
+            Err(anyhow::anyhow!(
+                "😵 Chat task stopped unexpectedly. See logs for details."
+            ))
+        }
+        Err(e) => {
+            error!("💥 Chat task panicked : {e}");
+            Err(anyhow::anyhow!(
+                "💥 Chat task panicked: {e}. See logs for details."
+            ))
+        }
+    }
 }
 
 pub fn exit_gui(
