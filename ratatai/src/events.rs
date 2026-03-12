@@ -10,7 +10,7 @@ use ratatui::backend::CrosstermBackend;
 use std::{env, sync::Arc};
 use tempfile::NamedTempFile;
 use tokio::{fs::File, io::AsyncReadExt, process::Command};
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
     PROJECT,
@@ -168,14 +168,18 @@ async fn handle_bug_description(
             let prompt = { gemini_response_text_for_spawn.lock().unwrap().clone() };
 
             tokio::spawn(async move {
-                let model = GenerativeModel::new(&client, "gemini-2.5-flash");
+                let model = GenerativeModel::new(&client, "gemini-3-flash-preview");
+                debug!("One-shot prompt: {prompt}");
 
                 match get_gemini_response(model, prompt).await {
                     Ok(response) => {
+                        let text = response.text();
+                        debug!("One-shot response: {text}");
                         let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                        *response_guard = response.text();
+                        *response_guard = text;
                     }
                     Err(e) => {
+                        error!("One-shot error: {e}");
                         let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
                         *response_guard = format!("Error while fetching the response: {e}");
                     }
@@ -195,11 +199,11 @@ async fn handle_bug_description(
             if app.current_screen == Screen::BugList {
                 app.current_screen = Screen::BugEditing;
                 app.active_panel = ActivePanel::Left;
-                app.bug_reply_text = "No bug replied yet.".to_string();
-            } else {
-                let bug_guard = { app.gemini_response.lock().unwrap().clone() };
+                app.bug_reply_text = "Waiting for AI response...".to_string();
 
+                let bug_guard = { app.gemini_response.lock().unwrap().clone() };
                 let prompt = format!("{}\n{}", get_initial_prompt(), bug_guard);
+                debug!("Chat prompt: {prompt}");
                 app.app_sender.send(prompt).await?;
                 app.spinner_enabled = true;
             }
@@ -239,6 +243,7 @@ async fn handle_bug_reply(
         //     app.bug_desc_scroll_to_end = true;
         // }
         KeyCode::Enter => {
+            debug!("Chat follow-up prompt: {}", app.bug_reply_text);
             app.app_sender.send(app.bug_reply_text.clone()).await?;
             app.spinner_enabled = true;
         }

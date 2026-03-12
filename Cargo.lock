@@ -630,9 +630,9 @@ checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
 name = "google-ai-rs"
-version = "0.1.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "508919d8c5801a0cb43f02fefc6bbb93f69a39c59fbcb1116df98c50f70bbace"
+checksum = "1fbc6abf47cbdcb94ccc02fb0908d3cfac1f4fb62e848482142f8b8e6d3e6130"
 dependencies = [
  "base64",
  "google-ai-schema-derive",
