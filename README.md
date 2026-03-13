@@ -151,10 +151,37 @@ cargo run --release
 
 # Set log level for debugging
 RUST_LOG=debug cargo run
-
-# Run in container with full development environment
-./run-podman.sh
 ```
+
+### Running with Podman
+
+The `run-podman.sh` script provides a convenient way to build and run
+ratatai in a container. It handles image building, environment validation,
+and container lifecycle management.
+
+```bash
+# Build the image and run the container (default)
+./run-podman.sh
+
+# Build the image only
+./run-podman.sh build
+
+# Run the container (assumes image is already built)
+./run-podman.sh run
+
+# Show available commands
+./run-podman.sh help
+
+# Run with debug logging
+RUST_LOG=debug ./run-podman.sh
+```
+
+The script will:
+- Verify that `.env` exists and contains `GEMINI_API_KEY`
+- Mount the current directory as `/app` in the container
+- Map your user ID into the container (`--userns=keep-id`)
+- Persist logs to the host `./logs` directory
+- Include neovim for in-container editing
 
 ### Keyboard Controls
 
