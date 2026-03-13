@@ -83,7 +83,7 @@ pub async fn get_gemini_response<'a>(
 // 6- If the bug is 'Incomplete':
 //    - Explain that we will mark this bug as 'Incomplete', and ask the reporter to set it back to 'New' once the missing information is provided.
 //    Example:
-//    For now, we’ll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
+//    For now, we'll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
 //
 // 7- If the bug is 'Invalid':
 //    - Explain that we will mark this bug as 'Invalid'.
@@ -104,8 +104,8 @@ pub async fn get_gemini_response<'a>(
 // Here is the bug reported:".to_string()
 // }
 
-pub(crate) fn get_initial_prompt() -> String {
-    "You are assisting with OpenStack Nova bug triage. Your task is to generate a reply to a bug reporter according to the rules below.
+pub(crate) fn get_system_instruction() -> String {
+    "You are an OpenStack Nova bug triager. Your task is to generate a reply to a bug reporter according to the rules below.
 Here is the template for bug submission with all the required information:
 *** Start template ***
 
@@ -170,7 +170,7 @@ If the bug should be marked **Incomplete**:
 Explain that the bug will be marked as 'Incomplete', and ask the reporter to set it back to 'New' once the missing information is provided.
 
 Example wording:
-For now, we’ll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
+For now, we'll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
 
 If the bug should be marked **Invalid**:
 Explain that the bug will be marked as 'Invalid'.
@@ -210,7 +210,5 @@ Output requirements:
 - The final output must always be the full final message.
 - Do not output explanations about the instructions.
 - Do not include the internal reasoning.
-- Only output the message intended for the bug reporter.
-
-Here is the bug reported:".to_string()
+- Only output the message intended for the bug reporter.".to_string()
 }

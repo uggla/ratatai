@@ -14,7 +14,7 @@ use tracing::{debug, error};
 
 use crate::{
     PROJECT,
-    ai::{get_gemini_response, get_initial_prompt},
+    ai::get_gemini_response,
     app::{ActivePanel, App, Screen},
 };
 
@@ -201,10 +201,9 @@ async fn handle_bug_description(
                 app.active_panel = ActivePanel::Left;
                 app.bug_reply_text = "Waiting for AI response...".to_string();
 
-                let bug_guard = { app.gemini_response.lock().unwrap().clone() };
-                let prompt = format!("{}\n{}", get_initial_prompt(), bug_guard);
-                debug!("Chat prompt: {prompt}");
-                app.app_sender.send(prompt).await?;
+                let bug_content = { app.gemini_response.lock().unwrap().clone() };
+                debug!("Chat prompt (bug content): {bug_content}");
+                app.app_sender.send(bug_content).await?;
                 app.spinner_enabled = true;
             }
         }

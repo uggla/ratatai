@@ -12,7 +12,7 @@ use crossterm::{
     event::{self, Event as CrosstermEvent},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use google_ai_rs::Client;
+use google_ai_rs::{Client, Error as GeminiError};
 use launchpad_api_client::{BugTaskEntry, LaunchpadError};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -30,6 +30,7 @@ use tracing::{debug, error, info, warn};
 use ui::draw_ui;
 
 use crate::{
+    ai::get_system_instruction,
     app::App,
     events::{QuitApp, handle_key_events},
 };
@@ -61,11 +62,14 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
         chat_receiver,
     );
 
-    // Start the asynchronous task for gemini chat"
+    // Start the asynchronous task for gemini chat
     let client = app.gemini_client.clone();
+    let system_instruction = get_system_instruction();
 
     let chat_task = tokio::spawn(async move {
-        let chat = client.generative_model("gemini-3-flash-preview");
+        let chat = client
+            .generative_model("gemini-3-flash-preview")
+            .with_system_instruction(system_instruction);
         let mut session = chat.start_chat();
         info!("Chat started");
 
@@ -82,7 +86,11 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
                 }
                 Err(e) => {
                     error!("Error calling gemini: {e}");
-                    break;
+                    let user_msg = extract_error_message(&e);
+                    if let Err(send_err) = chat_sender.send(user_msg).await {
+                        error!("Error sending error message: {send_err}");
+                        break;
+                    }
                 }
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -177,4 +185,47 @@ pub fn start_gui() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>, anyhow
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.hide_cursor()?;
     Ok(terminal)
+}
+
+fn extract_error_message(err: &GeminiError) -> String {
+    format!("⚠️ {}", extract_user_message(&err.to_string()))
+}
+
+/// Extract the human-readable message from a tonic::Status Display format.
+/// Input format: `... message: "human readable message", details: ...`
+/// Returns the extracted message, or the full string if no message field is found.
+fn extract_user_message(full: &str) -> &str {
+    if let Some(start) = full.find("message: \"") {
+        let msg_start = start + "message: \"".len();
+        if let Some(end) = full[msg_start..].find('"') {
+            return &full[msg_start..msg_start + end];
+        }
+    }
+    full
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_user_message_from_tonic_status() {
+        let input = r#"Service Error: API Error: Status: status: Unavailable, message: "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.", details: [], metadata: MetadataMap { headers: {"content-type": "application/grpc"} }"#;
+        assert_eq!(
+            extract_user_message(input),
+            "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later."
+        );
+    }
+
+    #[test]
+    fn test_extract_user_message_no_message_field() {
+        let input = "Some other error format without message field";
+        assert_eq!(extract_user_message(input), input);
+    }
+
+    #[test]
+    fn test_extract_user_message_empty_message() {
+        let input = r#"Status: status: Unknown, message: "", details: []"#;
+        assert_eq!(extract_user_message(input), "");
+    }
 }
