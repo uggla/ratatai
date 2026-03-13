@@ -23,5 +23,6 @@ tracing-appender = "0.2.4"
 anyhow = "1.0.102"
 regex = "1.12.3"
 reqwest = "0.13.2"
+scraper = "0.25.0"
 
  

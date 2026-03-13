@@ -1,7 +1,7 @@
 // src/ai.rs
 
 use google_ai_rs::{GenerativeModel, genai::Response};
-use regex::Regex;
+use scraper::{Html, Selector};
 use tracing::{info, warn};
 
 pub async fn get_gemini_response<'a>(
@@ -140,23 +140,27 @@ pub(crate) async fn fetch_supported_versions() -> String {
 }
 
 /// Parse the HTML from releases.openstack.org to extract maintained release names.
-/// Looks for table rows containing both a version name and "Maintained" status.
+/// Looks for table rows where the second cell contains exactly "Maintained".
 fn parse_maintained_versions(html: &str) -> String {
-    let row_re = Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>").unwrap();
-    let version_re = Regex::new(r"(20\d{2}\.\d\s+\w+)").unwrap();
+    let document = Html::parse_document(html);
+    let tr_selector = Selector::parse("tr").unwrap();
+    let td_selector = Selector::parse("td").unwrap();
 
-    let versions: Vec<String> = row_re
-        .captures_iter(html)
+    let versions: Vec<String> = document
+        .select(&tr_selector)
         .filter_map(|row| {
-            let row_content = &row[1];
-            // Check that this row has "Maintained" but not "Unmaintained"
-            if row_content.contains(">Maintained<") {
-                version_re
-                    .captures(row_content)
-                    .map(|cap| format!("- {}", &cap[1]))
-            } else {
-                None
+            let cells: Vec<_> = row.select(&td_selector).collect();
+            if cells.len() >= 2 {
+                let status = cells[1].text().collect::<String>();
+                if status.contains("Maintained") && !status.contains("Unmaintained") {
+                    let name = cells[0].text().collect::<String>();
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return Some(format!("- {name}"));
+                    }
+                }
             }
+            None
         })
         .collect();
 
@@ -281,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_parse_maintained_versions() {
-        let html = r#"
+        let html = r#"<table>
 <tr class="row-odd"><td><p><a class="reference internal" href="gazpacho/index.html"><span class="doc">2026.1 Gazpacho</span></a></p></td>
 <td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Maintained</a> <em>estimated 2026-04-01</em></p></td>
 </tr>
@@ -297,7 +301,7 @@ mod tests {
 <tr class="row-odd"><td><p><a class="reference internal" href="caracal/index.html"><span class="doc">2024.1 Caracal</span></a></p></td>
 <td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Unmaintained</a></p></td>
 </tr>
-"#;
+</table>"#;
         let result = parse_maintained_versions(html);
         assert_eq!(
             result,
@@ -307,11 +311,11 @@ mod tests {
 
     #[test]
     fn test_parse_maintained_versions_none_maintained() {
-        let html = r##"
+        let html = r##"<table>
 <tr class="row-odd"><td><p><span class="doc">2024.1 Caracal</span></p></td>
 <td><p><a href="#">Unmaintained</a></p></td>
 </tr>
-"##;
+</table>"##;
         assert_eq!(parse_maintained_versions(html), "");
     }
 
