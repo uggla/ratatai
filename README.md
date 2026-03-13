@@ -181,7 +181,7 @@ RUST_LOG=debug cargo run
 | `Home/End` | Go to top/bottom of bug description |
 | `v` | Open bug in web browser |
 | `e` | Edit AI response content in external editor |
-| `Enter` | Switch to Bug Editing screen |
+| `Enter` | Enter AI triage mode |
 | `Tab` | Switch to left panel (bug table) |
 
 #### Bug Editing Screen - Left Panel (Bug Details)
@@ -192,8 +192,8 @@ RUST_LOG=debug cargo run
 | `Home/End` | Go to top/bottom of bug description |
 | `v` | Open bug in web browser |
 | `e` | Edit AI response content in external editor |
-| `Enter` | Send AI prompt for bug response generation |
-| `Tab` | Switch to right panel (bug reply) |
+| `Enter` | Generate AI response (sends bug content to AI) |
+| `Tab` | Switch to right panel (available after first AI generation) |
 | `Esc` | Return to Bug List screen |
 
 #### Bug Editing Screen - Right Panel (Bug Reply)
@@ -230,8 +230,7 @@ ratatai/
 │   │   ├── app.rs             # Application state management
 │   │   ├── ui.rs              # UI rendering logic
 │   │   ├── events.rs          # Input event handling
-│   │   ├── ai.rs              # AI integration
-│   │   └── join_monitor.rs    # Background task monitoring
+│   │   └── ai.rs              # AI integration (system instruction, version fetching)
 │   └── Cargo.toml
 ├── launchpad_api_client/       # Launchpad API client library
 │   ├── src/
