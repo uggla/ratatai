@@ -90,7 +90,7 @@ fn handle_bug_editing_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Resul
         KeyCode::Tab => {
             if app.active_panel == ActivePanel::Right {
                 app.active_panel = ActivePanel::Left
-            } else {
+            } else if app.ai_generation_triggered {
                 app.active_panel = ActivePanel::Right
             }
         }
@@ -199,12 +199,15 @@ async fn handle_bug_description(
             if app.current_screen == Screen::BugList {
                 app.current_screen = Screen::BugEditing;
                 app.active_panel = ActivePanel::Left;
-                app.bug_reply_text = "Waiting for AI response...".to_string();
-
+                app.bug_reply_text = "Press Enter to generate AI response.".to_string();
+                app.ai_generation_triggered = false;
+            } else if app.current_screen == Screen::BugEditing {
                 let bug_content = { app.gemini_response.lock().unwrap().clone() };
                 debug!("Chat prompt (bug content): {bug_content}");
                 app.app_sender.send(bug_content).await?;
+                app.bug_reply_text = "Waiting for AI response...".to_string();
                 app.spinner_enabled = true;
+                app.ai_generation_triggered = true;
             }
         }
         _ => {}

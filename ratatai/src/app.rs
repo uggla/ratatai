@@ -50,6 +50,8 @@ pub(crate) struct App {
     pub app_sender: Sender<String>,
     pub chat_receiver: Receiver<String>,
     pub bug_reply_text: String,
+    /// Whether the first AI generation has been triggered in BugEditing mode
+    pub ai_generation_triggered: bool,
 }
 
 impl App {
@@ -87,6 +89,7 @@ impl App {
             app_sender,
             chat_receiver,
             bug_reply_text: String::new(),
+            ai_generation_triggered: false,
         }
     }
 

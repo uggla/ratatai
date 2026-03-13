@@ -97,12 +97,12 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
                 "↑↓ PgUp/PgDown Home/End: navigate, 'r': refresh, Enter: select bug, Tab: switch panel"
             }
             ActivePanel::Right => {
-                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open in browser, 'e': edit, Enter: reply, Tab: switch panel"
+                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open in browser, 'e': edit, Enter: AI triage, Tab: switch panel"
             }
         },
         Screen::BugEditing => match app.active_panel {
             ActivePanel::Left => {
-                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open browser, 'e': edit, Enter: AI prompt, Tab: switch, Esc: back"
+                "↑↓ PgUp/PgDown Home/End: scroll, 'v': open browser, 'e': edit, Enter: generate AI response, Esc: back"
             }
             ActivePanel::Right => "'e': edit reply, Enter: send for AI processing, Tab: switch panel, Esc: back to list",
         },
