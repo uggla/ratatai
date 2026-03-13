@@ -65,6 +65,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
     // Fetch supported OpenStack versions for the system instruction
     let supported_versions = fetch_supported_versions().await;
     let system_instruction = get_system_instruction(&supported_versions);
+    debug!("System instruction: {system_instruction}");
 
     // Start the asynchronous task for gemini chat
     let client = app.gemini_client.clone();
