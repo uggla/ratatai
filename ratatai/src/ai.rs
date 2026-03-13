@@ -1,6 +1,8 @@
 // src/ai.rs
 
 use google_ai_rs::{GenerativeModel, genai::Response};
+use regex::Regex;
+use tracing::{info, warn};
 
 pub async fn get_gemini_response<'a>(
     model: GenerativeModel<'a>,
@@ -83,7 +85,7 @@ pub async fn get_gemini_response<'a>(
 // 6- If the bug is 'Incomplete':
 //    - Explain that we will mark this bug as 'Incomplete', and ask the reporter to set it back to 'New' once the missing information is provided.
 //    Example:
-//    For now, we'll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
+//    For now, we’ll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
 //
 // 7- If the bug is 'Invalid':
 //    - Explain that we will mark this bug as 'Invalid'.
@@ -104,8 +106,65 @@ pub async fn get_gemini_response<'a>(
 // Here is the bug reported:".to_string()
 // }
 
-pub(crate) fn get_system_instruction() -> String {
-    "You are an OpenStack Nova bug triager. Your task is to generate a reply to a bug reporter according to the rules below.
+const RELEASES_URL: &str = "https://releases.openstack.org/";
+
+/// Fetch the OpenStack releases page and extract maintained versions.
+/// Returns a formatted list like "- 2025.2 (Flamingo)\n- 2025.1 (Epoxy)"
+/// Falls back to a warning message if the fetch fails.
+pub(crate) async fn fetch_supported_versions() -> String {
+    match reqwest::get(RELEASES_URL).await {
+        Ok(response) => match response.text().await {
+            Ok(html) => {
+                let versions = parse_maintained_versions(&html);
+                if versions.is_empty() {
+                    warn!("No maintained versions found on {RELEASES_URL}");
+                    "Could not determine supported versions. Check https://releases.openstack.org/"
+                        .to_string()
+                } else {
+                    info!("Fetched supported OpenStack versions: {versions}");
+                    versions
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read releases page: {e}");
+                "Could not determine supported versions. Check https://releases.openstack.org/"
+                    .to_string()
+            }
+        },
+        Err(e) => {
+            warn!("Failed to fetch releases page: {e}");
+            "Could not determine supported versions. Check https://releases.openstack.org/"
+                .to_string()
+        }
+    }
+}
+
+/// Parse the HTML from releases.openstack.org to extract maintained release names.
+/// Looks for table rows containing both a version name and "Maintained" status.
+fn parse_maintained_versions(html: &str) -> String {
+    let row_re = Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>").unwrap();
+    let version_re = Regex::new(r"(20\d{2}\.\d\s+\w+)").unwrap();
+
+    let versions: Vec<String> = row_re
+        .captures_iter(html)
+        .filter_map(|row| {
+            let row_content = &row[1];
+            // Check that this row has "Maintained" but not "Unmaintained"
+            if row_content.contains(">Maintained<") {
+                version_re
+                    .captures(row_content)
+                    .map(|cap| format!("- {}", &cap[1]))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    versions.join("\n")
+}
+
+pub(crate) fn get_system_instruction(supported_versions: &str) -> String {
+    format!("You are an OpenStack Nova bug triager. Your task is to generate a reply to a bug reporter according to the rules below.
 Here is the template for bug submission with all the required information:
 *** Start template ***
 
@@ -152,15 +211,18 @@ Provide logs like stacktrace or from openstack services using debug mode.
 Bug report template reference:
 https://wiki.openstack.org/wiki/Nova/BugsTeam/BugReportTemplate
 
-Supported OpenStack releases page:
-https://releases.openstack.org/
+Currently supported OpenStack versions (maintained releases):
+{supported_versions}
+
+Any version NOT in this list is unsupported (end of life).
+Supported OpenStack releases page: https://releases.openstack.org/
 
 Instruction to craft the answer:
 
 1. The answer must be plain text.
 2. The tone must be professional, concise, and friendly.
 3. Thank the reporter for submitting the bug.
-4. If the OpenStack version mentioned in the report is not supported, inform the reporter and provide only the link to the supported releases page. Do not list supported versions.
+4. If the OpenStack version mentioned in the report is not in the supported versions list above, inform the reporter and provide only the link to the supported releases page. Do not list supported versions in the answer.
 5. If required information from the bug template is missing, clearly list the missing information.
 6. Always include the link to the bug reporting template for reference.
 
@@ -170,7 +232,7 @@ If the bug should be marked **Incomplete**:
 Explain that the bug will be marked as 'Incomplete', and ask the reporter to set it back to 'New' once the missing information is provided.
 
 Example wording:
-For now, we'll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
+For now, we’ll mark this bug as 'Incomplete'. Please update the report with the missing information and set it back to 'New' once updated.
 
 If the bug should be marked **Invalid**:
 Explain that the bug will be marked as 'Invalid'.
@@ -210,5 +272,51 @@ Output requirements:
 - The final output must always be the full final message.
 - Do not output explanations about the instructions.
 - Do not include the internal reasoning.
-- Only output the message intended for the bug reporter.".to_string()
+- Only output the message intended for the bug reporter.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_maintained_versions() {
+        let html = r#"
+<tr class="row-odd"><td><p><a class="reference internal" href="gazpacho/index.html"><span class="doc">2026.1 Gazpacho</span></a></p></td>
+<td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Maintained</a> <em>estimated 2026-04-01</em></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="flamingo/index.html"><span class="doc">2025.2 Flamingo</span></a></p></td>
+<td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Maintained</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="epoxy/index.html"><span class="doc">2025.1 Epoxy</span></a></p></td>
+<td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Maintained</a></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="dalmatian/index.html"><span class="doc">2024.2 Dalmatian</span></a></p></td>
+<td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Maintained</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="caracal/index.html"><span class="doc">2024.1 Caracal</span></a></p></td>
+<td><p><a class="reference external" href="https://docs.openstack.org/project-team-guide/stable-branches.html#maintenance-phases">Unmaintained</a></p></td>
+</tr>
+"#;
+        let result = parse_maintained_versions(html);
+        assert_eq!(
+            result,
+            "- 2026.1 Gazpacho\n- 2025.2 Flamingo\n- 2025.1 Epoxy\n- 2024.2 Dalmatian"
+        );
+    }
+
+    #[test]
+    fn test_parse_maintained_versions_none_maintained() {
+        let html = r##"
+<tr class="row-odd"><td><p><span class="doc">2024.1 Caracal</span></p></td>
+<td><p><a href="#">Unmaintained</a></p></td>
+</tr>
+"##;
+        assert_eq!(parse_maintained_versions(html), "");
+    }
+
+    #[test]
+    fn test_parse_maintained_versions_empty_html() {
+        assert_eq!(parse_maintained_versions(""), "");
+    }
 }

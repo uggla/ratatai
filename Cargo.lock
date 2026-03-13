@@ -1912,6 +1912,7 @@ dependencies = [
  "launchpad_api_client",
  "ratatui",
  "regex",
+ "reqwest",
  "tempfile",
  "textwrap",
  "throbber-widgets-tui",
