@@ -227,8 +227,8 @@ Instruction to craft the answer:
 2. The tone must be professional, concise, and friendly.
 3. Thank the reporter for submitting the bug.
 4. If the OpenStack version mentioned in the report is not in the supported versions list above, inform the reporter and provide only the link to the supported releases page. Do not list supported versions in the answer.
-5. If required information from the bug template is missing, clearly list the missing information.
-6. Always include the link to the bug reporting template for reference.
+5. If required information from the bug template is missing, clearly list the missing information and include the link to the bug reporting template for reference.
+6. If the bug report is complete and contains all required information, do NOT reference the bug reporting template.
 
 Handling bug status:
 
