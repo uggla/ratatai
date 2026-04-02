@@ -130,7 +130,7 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
         },
         app.bug_table_items.len()
     );
-    let header_cells = ["Bug ID", "Date", "R", "Title"]
+    let header_cells = ["Bug ID", "Date", "A", "Title"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Red)));
     let header = Row::new(header_cells).style(Style::default()).height(1);
