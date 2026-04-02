@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use google_ai_rs::{GenerativeModel, genai::Response};
 use regex::Regex;
 use scraper::{Html, Selector};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub async fn get_gemini_response<'a>(
     model: GenerativeModel<'a>,
@@ -156,7 +156,10 @@ async fn fetch_roster_bug_ids_from(url: &str) -> Option<HashSet<u32>> {
         Ok(response) => match response.text().await {
             Ok(text) => {
                 let ids = parse_roster_bug_ids(&text);
+                let mut sorted: Vec<_> = ids.iter().collect();
+                sorted.sort();
                 info!("Fetched {} bug IDs from triage roster", ids.len());
+                debug!("Roster bug IDs: {sorted:?}");
                 Some(ids)
             }
             Err(e) => {
