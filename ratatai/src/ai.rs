@@ -1,6 +1,9 @@
 // src/ai.rs
 
+use std::collections::HashSet;
+
 use google_ai_rs::{GenerativeModel, genai::Response};
+use regex::Regex;
 use scraper::{Html, Selector};
 use tracing::{info, warn};
 
@@ -137,6 +140,43 @@ pub(crate) async fn fetch_supported_versions() -> String {
                 .to_string()
         }
     }
+}
+
+const ROSTER_URL: &str = "https://etherpad.opendev.org/p/nova-bug-triage-roster/export/txt";
+
+/// Fetch the nova bug triage roster etherpad and extract bug IDs that are already assigned.
+/// Returns `Some(set)` with bug IDs found in URLs like `https://bugs.launchpad.net/nova/+bug/NNNNNN`,
+/// or `None` if the page could not be fetched.
+pub(crate) async fn fetch_roster_bug_ids() -> Option<HashSet<u32>> {
+    fetch_roster_bug_ids_from(ROSTER_URL).await
+}
+
+async fn fetch_roster_bug_ids_from(url: &str) -> Option<HashSet<u32>> {
+    match reqwest::get(url).await {
+        Ok(response) => match response.text().await {
+            Ok(text) => {
+                let ids = parse_roster_bug_ids(&text);
+                info!("Fetched {} bug IDs from triage roster", ids.len());
+                Some(ids)
+            }
+            Err(e) => {
+                warn!("Failed to read triage roster page: {e}");
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Failed to fetch triage roster page: {e}");
+            None
+        }
+    }
+}
+
+/// Parse plain text from the etherpad and extract bug IDs from Launchpad URLs.
+fn parse_roster_bug_ids(text: &str) -> HashSet<u32> {
+    let re = Regex::new(r"bugs\.launchpad\.net/nova/\+bug/(\d+)").unwrap();
+    re.captures_iter(text)
+        .filter_map(|caps| caps[1].parse::<u32>().ok())
+        .collect()
 }
 
 /// Parse the HTML from releases.openstack.org to extract maintained release names.
@@ -322,5 +362,81 @@ mod tests {
     #[test]
     fn test_parse_maintained_versions_empty_html() {
         assert_eq!(parse_maintained_versions(""), "");
+    }
+
+    #[test]
+    fn test_parse_roster_bug_ids() {
+        let text = r#"
+Uggla
+https://bugs.launchpad.net/nova/+bug/2062145 - Some bug title
+https://bugs.launchpad.net/nova/+bug/2115870 - Another bug
+
+elodilles
+https://bugs.launchpad.net/nova/+bug/2098496 - Yet another
+Some text without a bug link
+"#;
+        let ids = parse_roster_bug_ids(text);
+        assert_eq!(ids.len(), 3);
+        assert!(ids.contains(&2062145));
+        assert!(ids.contains(&2115870));
+        assert!(ids.contains(&2098496));
+    }
+
+    #[test]
+    fn test_parse_roster_bug_ids_empty() {
+        assert!(parse_roster_bug_ids("").is_empty());
+    }
+
+    #[test]
+    fn test_parse_roster_bug_ids_no_match() {
+        assert!(parse_roster_bug_ids("no bugs here, just text").is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_roster_bug_ids_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/roster")
+            .with_status(200)
+            .with_body(
+                "Uggla\nhttps://bugs.launchpad.net/nova/+bug/2062145 - title\n\
+                 https://bugs.launchpad.net/nova/+bug/2098496 - other\n",
+            )
+            .create_async()
+            .await;
+
+        let url = format!("{}/roster", server.url());
+        let result = fetch_roster_bug_ids_from(&url).await;
+
+        mock.assert_async().await;
+        let ids = result.expect("should return Some");
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&2062145));
+        assert!(ids.contains(&2098496));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_roster_bug_ids_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/roster")
+            .with_status(200)
+            .with_body("")
+            .create_async()
+            .await;
+
+        let url = format!("{}/roster", server.url());
+        let result = fetch_roster_bug_ids_from(&url).await;
+
+        mock.assert_async().await;
+        let ids = result.expect("should return Some even if empty");
+        assert!(ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_roster_bug_ids_connection_refused() {
+        // Use a URL that will fail to connect
+        let result = fetch_roster_bug_ids_from("http://127.0.0.1:1").await;
+        assert!(result.is_none(), "should return None when connection fails");
     }
 }

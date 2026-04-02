@@ -25,4 +25,7 @@ regex = "1.12.3"
 reqwest = "0.13.2"
 scraper = "0.26.0"
 
+[dev-dependencies]
+mockito = "1.7.2"
+
  

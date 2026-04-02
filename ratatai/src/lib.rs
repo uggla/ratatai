@@ -30,7 +30,7 @@ use tracing::{debug, error, info, warn};
 use ui::draw_ui;
 
 use crate::{
-    ai::{fetch_supported_versions, get_system_instruction},
+    ai::{fetch_roster_bug_ids, fetch_supported_versions, get_system_instruction},
     app::App,
     events::{QuitApp, handle_key_events},
 };
@@ -62,10 +62,12 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
         chat_receiver,
     );
 
-    // Fetch supported OpenStack versions for the system instruction
-    let supported_versions = fetch_supported_versions().await;
+    // Fetch supported OpenStack versions and triage roster in parallel
+    let (supported_versions, roster_bug_ids) =
+        tokio::join!(fetch_supported_versions(), fetch_roster_bug_ids());
     let system_instruction = get_system_instruction(&supported_versions);
     debug!("System instruction: {system_instruction}");
+    app.roster_bug_ids = roster_bug_ids;
 
     // Start the asynchronous task for gemini chat
     let client = app.gemini_client.clone();

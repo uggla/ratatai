@@ -1,5 +1,7 @@
 // src/app.rs
 
+use std::collections::HashSet;
+
 use google_ai_rs::Client;
 use launchpad_api_client::{
     BugTaskEntry, LaunchpadBug, StatusFilter, get_bug as lp_get_bug, get_project_bug_tasks,
@@ -52,6 +54,8 @@ pub(crate) struct App {
     pub bug_reply_text: String,
     /// Whether the first AI generation has been triggered in BugEditing mode
     pub ai_generation_triggered: bool,
+    /// Bug IDs found in the triage roster. None if the roster could not be fetched.
+    pub roster_bug_ids: Option<HashSet<u32>>,
 }
 
 impl App {
@@ -90,6 +94,7 @@ impl App {
             chat_receiver,
             bug_reply_text: String::new(),
             ai_generation_triggered: false,
+            roster_bug_ids: None,
         }
     }
 
@@ -209,10 +214,17 @@ impl App {
 
                 let (id, title) = extract_from_title(&item.title);
 
+                let roster_marker = match &self.roster_bug_ids {
+                    None => "?",
+                    Some(set) if id.parse::<u32>().is_ok_and(|n| set.contains(&n)) => "*",
+                    Some(_) => "",
+                };
+
                 let cells = vec![
                     Cell::from(id),
                     // I think we can unwrap safely as I guess we always have a date_created
                     Cell::from(item.date_created.unwrap().clone().date_naive().to_string()),
+                    Cell::from(roster_marker),
                     Cell::from(title),
                 ];
                 Row::new(cells).height(height as u16).bottom_margin(1)
