@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, error::Category};
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, error};
 
 #[derive(Error, Debug)]
 pub enum LaunchpadError {
@@ -192,6 +192,16 @@ where
     })
 }
 
+fn response_excerpt(response: &str) -> &str {
+    const MAX_LEN: usize = 512;
+    let end = response
+        .char_indices()
+        .nth(MAX_LEN)
+        .map(|(idx, _)| idx)
+        .unwrap_or(response.len());
+    &response[..end]
+}
+
 pub async fn get_bug(
     client: &impl HTTPClient,
     bug_id: u32,
@@ -200,7 +210,13 @@ pub async fn get_bug(
     debug!("Connecting to \"{url}\"");
     let response = client.get(&url).await?;
 
-    let bug: LaunchpadBug = serde_json::from_str(&response)?;
+    let bug: LaunchpadBug = serde_json::from_str(&response).map_err(|e| {
+        error!(
+            "get_bug: failed to deserialize response from {url}: {e}; body_excerpt={}",
+            response_excerpt(&response)
+        );
+        LaunchpadError::Deserialization(e)
+    })?;
     Ok(bug)
 }
 
@@ -240,6 +256,7 @@ pub async fn get_project_bug_tasks(
 }
 
 fn check_project(project_name: &str, url: &str, response: &str) -> Result<Value, LaunchpadError> {
+    debug!("check_project: url={url}, response={response}");
     let project: Result<Value, serde_json::Error> = serde_json::from_str(response);
 
     // Check for invalid json
@@ -247,6 +264,7 @@ fn check_project(project_name: &str, url: &str, response: &str) -> Result<Value,
         Ok(v) => v,
         Err(e) => match e.classify() {
             Category::Syntax => {
+                debug!("check_project: invalid JSON syntax for project '{project_name}': {e}");
                 return Err(LaunchpadError::InvalidProject(project_name.to_string()));
             }
             _ => return Err(LaunchpadError::Deserialization(e)),
@@ -255,6 +273,10 @@ fn check_project(project_name: &str, url: &str, response: &str) -> Result<Value,
 
     // Check for valid json but wrong content
     if project["self_link"] != url {
+        debug!(
+            "check_project: self_link mismatch for project '{project_name}': expected '{url}', got '{}'",
+            project["self_link"]
+        );
         return Err(LaunchpadError::InvalidProject(project_name.to_string()));
     }
 
@@ -267,7 +289,14 @@ async fn get_bug_tasks_page(
 ) -> Result<LaunchpadBugTasksResponse, LaunchpadError> {
     debug!("Connecting to \"{url}\"");
     let tasks_response_text = client.get(url).await?;
-    let bug_tasks_response: LaunchpadBugTasksResponse = serde_json::from_str(&tasks_response_text)?;
+    let bug_tasks_response: LaunchpadBugTasksResponse =
+        serde_json::from_str(&tasks_response_text).map_err(|e| {
+            error!(
+                "get_bug_tasks_page: failed to deserialize response from {url}: {e}; body_excerpt={}",
+                response_excerpt(&tasks_response_text)
+            );
+            LaunchpadError::Deserialization(e)
+        })?;
     Ok(bug_tasks_response)
 }
 
