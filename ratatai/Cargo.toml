@@ -12,18 +12,18 @@ tempfile = "3.27.0"
 textwrap = "0.16.2"
 chrono = "0.4.44"
 throbber-widgets-tui = "0.11.0"
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 launchpad_api_client = { path = "../launchpad_api_client" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = [
   "registry",
   "env-filter",
 ] }
-tracing-appender = "0.2.4"
+tracing-appender = "0.2.5"
 anyhow = "1.0.102"
 regex = "1.12.3"
-reqwest = "0.13.2"
-scraper = "0.26.0"
+reqwest = "0.13.3"
+scraper = "0.27.0"
 
 [dev-dependencies]
 mockito = "1.7.2"
