@@ -168,7 +168,7 @@ async fn handle_bug_description(
             let prompt = { gemini_response_text_for_spawn.lock().unwrap().clone() };
 
             tokio::spawn(async move {
-                let model = GenerativeModel::new(&client, "gemini-3-flash-preview");
+                let model = GenerativeModel::new(&client, "gemini-3.5-flash");
                 debug!("One-shot prompt: {prompt}");
 
                 match get_gemini_response(model, prompt).await {

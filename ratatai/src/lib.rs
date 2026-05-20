@@ -74,7 +74,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
 
     let chat_task = tokio::spawn(async move {
         let chat = client
-            .generative_model("gemini-3-flash-preview")
+            .generative_model("gemini-3.5-flash")
             .with_system_instruction(system_instruction);
         let mut session = chat.start_chat();
         info!("Chat started");
