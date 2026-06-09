@@ -41,6 +41,7 @@ const PROJECT: &str = "nova";
 enum LpMessage {
     Bugs(Box<[BugTaskEntry]>),
     Bug(Box<launchpad_api_client::LaunchpadBug>),
+    BugListMessage(String),
     Error(LaunchpadError),
 }
 
@@ -125,6 +126,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
             Ok(msg) => match msg {
                 LpMessage::Bugs(bugs) => app.update_bugs(bugs, &project_regexp),
                 LpMessage::Bug(bug) => app.update_bug(*bug),
+                LpMessage::BugListMessage(message) => app.update_bug_list_message(message),
                 LpMessage::Error(e) => bail!(e),
             },
         };

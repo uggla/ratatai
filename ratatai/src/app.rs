@@ -4,13 +4,15 @@ use std::collections::HashSet;
 
 use google_ai_rs::Client;
 use launchpad_api_client::{
-    BugTaskEntry, LaunchpadBug, StatusFilter, get_bug as lp_get_bug, get_project_bug_tasks,
+    BugTaskEntry, LaunchpadBug, LaunchpadError, StatusFilter, get_bug as lp_get_bug,
+    get_project_bug_tasks,
 };
 use ratatui::widgets::{Cell, Row, ScrollbarState, TableState};
 use regex::Regex;
 use std::sync::{Arc, Mutex};
 use throbber_widgets_tui::ThrobberState;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::{Duration, sleep};
 use tracing::{error, info};
 
 use crate::{LpMessage, ui::SPINNER_LABELS};
@@ -34,6 +36,7 @@ pub(crate) struct App {
     pub bug_table_rows: Vec<Row<'static>>,
     pub bug_table_state: TableState,
     pub bug_table_scrollbar_state: ScrollbarState,
+    pub bug_list_message: Option<String>,
     pub active_panel: ActivePanel,
     pub current_screen: Screen,
     pub bug_desc_scroll: u16,
@@ -78,6 +81,7 @@ impl App {
             bug_table_rows: rows,
             bug_table_state: table_state,
             bug_table_scrollbar_state: scrollbar_state,
+            bug_list_message: None,
             active_panel: ActivePanel::Left,
             current_screen: Screen::BugList,
             bug_desc_scroll: 0,
@@ -100,6 +104,10 @@ impl App {
 
     /// Moves the selection up in the table.
     pub(crate) fn bug_table_previous_item(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         let i = match self.bug_table_state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -116,6 +124,10 @@ impl App {
 
     /// Moves the selection down in the table.
     pub(crate) fn bug_table_next_item(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         let i = match self.bug_table_state.selected() {
             Some(i) => {
                 if i >= self.bug_table_items.len() - 1 {
@@ -131,6 +143,10 @@ impl App {
     }
 
     pub(crate) fn bug_table_page_up_item(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         let i = match self.bug_table_state.selected() {
             Some(i) => i.saturating_sub(10),
             None => 0,
@@ -140,6 +156,10 @@ impl App {
     }
 
     pub(crate) fn bug_table_page_down_item(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         let i = match self.bug_table_state.selected() {
             Some(i) => (i + 10).min(self.bug_table_items.len() - 1),
             None => 0,
@@ -149,11 +169,19 @@ impl App {
     }
 
     pub(crate) fn bug_table_go_to_start(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         self.bug_table_state.select(Some(0));
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(0);
     }
 
     pub(crate) fn bug_table_go_to_end(&mut self) {
+        if self.bug_table_items.is_empty() {
+            return;
+        }
+
         let i = self.bug_table_items.len() - 1;
         self.bug_table_state.select(Some(i));
         self.bug_table_scrollbar_state = self.bug_table_scrollbar_state.position(i);
@@ -168,33 +196,58 @@ impl App {
 
     pub(crate) fn get_bugs(&mut self, project: String) {
         self.spinner_enabled = true;
+        self.bug_list_message = None;
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
         tokio::spawn(async move {
             info!("Task to get bugs started");
 
-            match get_project_bug_tasks(&*client, &project, Some(StatusFilter::New)).await {
-                Ok(mut bug_tasks) => {
-                    bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
+            let mut timeout_count = 0;
+            for attempt in 1..=2 {
+                match get_project_bug_tasks(&*client, &project, Some(StatusFilter::New)).await {
+                    Ok(mut bug_tasks) => {
+                        bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
 
-                    if let Err(e) = sender
-                        .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
-                        .await
-                    {
-                        error!("Fail to send message, error {e}");
+                        if let Err(e) = sender
+                            .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
+                            .await
+                        {
+                            error!("Fail to send message, error {e}");
+                        }
+                        info!("Task to get bugs completed");
+                        return;
+                    }
+                    Err(LaunchpadError::ApiTimeout { .. }) => {
+                        timeout_count += 1;
+                        if attempt < 2 {
+                            sleep(Duration::from_millis(500)).await;
+                        }
+                    }
+                    Err(e) => {
+                        if let Err(e) = sender.send(LpMessage::Error(e)).await {
+                            error!("Fail to send message, error {e}");
+                        }
+                        info!("Task to get bugs completed");
+                        return;
                     }
                 }
-                Err(e) => {
-                    if let Err(e) = sender.send(LpMessage::Error(e)).await {
-                        error!("Fail to send message, error {e}");
-                    }
-                }
+            }
+
+            if timeout_count == 2
+                && let Err(e) = sender
+                    .send(LpMessage::BugListMessage(
+                        "Launchpad timeout while refreshing bugs. Press 'r' to retry.".to_string(),
+                    ))
+                    .await
+            {
+                error!("Fail to send message, error {e}");
             }
             info!("Task to get bugs completed");
         });
     }
 
     pub(crate) fn update_bugs(&mut self, bugs: Box<[BugTaskEntry]>, re: &Regex) {
+        self.bug_list_message = None;
         self.bug_table_items = bugs;
         self.bug_table_rows = self
             .bug_table_items
@@ -232,6 +285,15 @@ impl App {
             .collect();
         self.bug_table_state.select(Some(0));
         self.bug_table_scrollbar_state = ScrollbarState::new(self.bug_table_items.len());
+        self.spinner_enabled = false;
+    }
+
+    pub(crate) fn update_bug_list_message(&mut self, message: String) {
+        self.bug_table_items = Box::new([]);
+        self.bug_table_rows.clear();
+        self.bug_table_state.select(None);
+        self.bug_table_scrollbar_state = ScrollbarState::new(0);
+        self.bug_list_message = Some(message);
         self.spinner_enabled = false;
     }
 

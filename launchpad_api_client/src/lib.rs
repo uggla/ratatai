@@ -15,6 +15,8 @@ pub enum LaunchpadError {
     Deserialization(#[from] serde_json::Error),
     #[error("Invalid project: {0}")]
     InvalidProject(String),
+    #[error("Launchpad API timeout while fetching {url}: {body_excerpt}")]
+    ApiTimeout { url: String, body_excerpt: String },
 }
 
 pub trait HTTPClient {
@@ -202,6 +204,12 @@ fn response_excerpt(response: &str) -> &str {
     &response[..end]
 }
 
+fn is_launchpad_timeout_response(response: &str) -> bool {
+    let trimmed = response.trim_start();
+    (trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html"))
+        && response.contains("Error: Timeout")
+}
+
 pub async fn get_bug(
     client: &impl HTTPClient,
     bug_id: u32,
@@ -289,6 +297,15 @@ async fn get_bug_tasks_page(
 ) -> Result<LaunchpadBugTasksResponse, LaunchpadError> {
     debug!("Connecting to \"{url}\"");
     let tasks_response_text = client.get(url).await?;
+    if is_launchpad_timeout_response(&tasks_response_text) {
+        let body_excerpt = response_excerpt(&tasks_response_text).to_string();
+        error!("get_bug_tasks_page: Launchpad timeout from {url}; body_excerpt={body_excerpt}");
+        return Err(LaunchpadError::ApiTimeout {
+            url: url.to_string(),
+            body_excerpt,
+        });
+    }
+
     let bug_tasks_response: LaunchpadBugTasksResponse =
         serde_json::from_str(&tasks_response_text).map_err(|e| {
             error!(
@@ -315,6 +332,65 @@ mod tests {
     use crate::client::FakeClient;
 
     use super::*;
+    use std::sync::Mutex;
+
+    struct TimeoutClient;
+
+    impl HTTPClient for TimeoutClient {
+        async fn get(&self, url: &str) -> Result<String, LaunchpadError> {
+            match url {
+                "https://api.launchpad.net/1.0/nova" => Ok(crate::fake::fake_project()),
+                "https://api.launchpad.net/1.0/nova?ws.op=searchTasks&status=New" => {
+                    Ok(launchpad_timeout_html())
+                }
+                _ => Ok(crate::fake::fake_bug(url)),
+            }
+        }
+    }
+
+    struct TimeoutThenSuccessClient {
+        search_tasks_calls: Mutex<u32>,
+    }
+
+    impl TimeoutThenSuccessClient {
+        fn new() -> Self {
+            Self {
+                search_tasks_calls: Mutex::new(0),
+            }
+        }
+    }
+
+    impl HTTPClient for TimeoutThenSuccessClient {
+        async fn get(&self, url: &str) -> Result<String, LaunchpadError> {
+            match url {
+                "https://api.launchpad.net/1.0/nova" => Ok(crate::fake::fake_project()),
+                "https://api.launchpad.net/1.0/nova?ws.op=searchTasks&status=New" => {
+                    let mut calls = self.search_tasks_calls.lock().unwrap();
+                    *calls += 1;
+                    if *calls == 1 {
+                        Ok(launchpad_timeout_html())
+                    } else {
+                        Ok(crate::fake::fake_bug_tasks_page_1())
+                    }
+                }
+                "https://api.launchpad.net/1.0/nova?status=New&ws.op=searchTasks&ws.size=2&memo=2&ws.start=2" => {
+                    Ok(crate::fake::fake_bug_tasks_page_2())
+                }
+                _ => Ok(crate::fake::fake_bug(url)),
+            }
+        }
+    }
+
+    fn launchpad_timeout_html() -> String {
+        r#"<!DOCTYPE html>
+<html>
+  <head>
+    <title>Error: Timeout</title>
+  </head>
+  <body>Timeout</body>
+</html>"#
+            .to_string()
+    }
 
     #[tokio::test]
     async fn test_get_bug() {
@@ -361,6 +437,25 @@ mod tests {
 
         let bug_links: Vec<&String> = bug_tasks.iter().map(|b| &b.bug_link).collect();
         assert_eq!(bug_links, bug_links_ref);
+    }
+
+    #[tokio::test]
+    async fn test_get_project_bugs_timeout_is_not_deserialization_error() {
+        let client = TimeoutClient;
+
+        let result = get_project_bug_tasks(&client, "nova", Some(StatusFilter::New)).await;
+
+        assert!(matches!(result, Err(LaunchpadError::ApiTimeout { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_get_project_bugs_does_not_retry_timeout_in_client() {
+        let client = TimeoutThenSuccessClient::new();
+
+        let result = get_project_bug_tasks(&client, "nova", Some(StatusFilter::New)).await;
+
+        assert!(matches!(result, Err(LaunchpadError::ApiTimeout { .. })));
+        assert_eq!(*client.search_tasks_calls.lock().unwrap(), 1);
     }
 
     #[tokio::test]

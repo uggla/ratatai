@@ -111,9 +111,10 @@ async fn handle_bug_table(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitAp
         KeyCode::Char('r') => app.get_bugs(PROJECT.to_string()),
         KeyCode::Enter => {
             if let Some(index) = app.bug_table_state.selected()
-                && let Some(bug_entry) = app.bug_table_items.get(index) {
-                    app.get_bug(bug_entry.get_id());
-                }
+                && let Some(bug_entry) = app.bug_table_items.get(index)
+            {
+                app.get_bug(bug_entry.get_id());
+            }
         }
         _ => {}
     }
@@ -151,16 +152,17 @@ async fn handle_bug_description(
         }
         KeyCode::Char('v') => {
             if let Some(index) = app.bug_table_state.selected()
-                && let Some(bug_entry) = app.bug_table_items.get(index) {
-                    let status = Command::new("xdg-open")
-                        .arg(&bug_entry.web_link)
-                        .status()
-                        .await?;
+                && let Some(bug_entry) = app.bug_table_items.get(index)
+            {
+                let status = Command::new("xdg-open")
+                    .arg(&bug_entry.web_link)
+                    .status()
+                    .await?;
 
-                    if !status.success() {
-                        error!("Fail to open url: {:?}", status.code());
-                    }
+                if !status.success() {
+                    error!("Fail to open url: {:?}", status.code());
                 }
+            }
         }
         KeyCode::Char('a') => {
             let client = Arc::clone(&app.gemini_client);

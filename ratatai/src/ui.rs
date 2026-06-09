@@ -7,7 +7,7 @@ use ratatui::{
     text::Line,
     widgets::{
         Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        Table,
+        Table, Wrap,
     },
 };
 use textwrap::wrap;
@@ -104,7 +104,9 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
             ActivePanel::Left => {
                 "↑↓ PgUp/PgDown Home/End: scroll, 'v': open browser, 'e': edit, Enter: generate AI response, Esc: back"
             }
-            ActivePanel::Right => "'e': edit reply, Enter: send for AI processing, Tab: switch panel, Esc: back to list",
+            ActivePanel::Right => {
+                "'e': edit reply, Enter: send for AI processing, Tab: switch panel, Esc: back to list"
+            }
         },
     };
     let command_paragraph = Paragraph::new(command_text)
@@ -122,6 +124,26 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
+    if let Some(message) = &app.bug_list_message {
+        let table_border_style = if let ActivePanel::Left = app.active_panel {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let message = Paragraph::new(message.as_str())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Bugs in status 'New'")
+                    .border_style(table_border_style),
+            )
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(message, area);
+        return;
+    }
+
     let table_title = format!(
         "Bugs in status 'New' {}/{}",
         match app.bug_table_state.selected() {
