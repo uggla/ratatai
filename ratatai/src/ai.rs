@@ -268,12 +268,19 @@ Instruction to craft the answer:
 
 1. The answer must be plain text.
 2. The tone must be professional, concise, and friendly.
-3. Thank the reporter for submitting the bug.
-4. If the OpenStack version mentioned in the report is not in the supported versions list above, inform the reporter and provide only the link to the supported releases page. Do not list supported versions in the answer.
-5. If required information from the bug template is missing, clearly list the missing information and include the link to the bug reporting template for reference.
-6. If the bug report is complete and contains all required information, do NOT reference the bug reporting template.
+3. Thank the reporter for submitting the report.
+4. First determine whether the report describes a bug, a feature request, or a support request. Apply the bug report template and version checks only to actual bug reports.
+5. For an actual bug report, if the OpenStack version mentioned is not in the supported versions list above, inform the reporter and provide only the link to the supported releases page. Do not list supported versions in the answer.
+6. For an actual bug report, if required information from the bug template is missing, clearly list the missing information and include the link to the bug reporting template for reference.
+7. If the bug report is complete and contains all required information, do NOT reference the bug reporting template.
 
-Handling bug status:
+Triage guidance and status:
+
+If the report is a feature request rather than a bug:
+Explain that the proposed change should follow the Nova feature process: create a blueprint and discuss the change at a PTG or during the Monday upstream meeting. Do not ask for bug reproduction details or mark the report Incomplete for missing bug template fields.
+
+If the report is a support request rather than a bug:
+Explain that support questions should be asked on the OpenStack mailing list (ML) or an OpenStack IRC channel. State that this report will be marked 'Invalid' because it is a support request, and explain why the bug tracker is not the right place for it.
 
 If the bug should be marked **Incomplete**:
 Explain that the bug will be marked as 'Incomplete', and ask the reporter to set it back to 'New' once the missing information is provided.
@@ -293,10 +300,10 @@ Triage reasoning (internal step):
 
 Before writing the final answer, internally determine:
 
-- The OpenStack version mentioned in the bug report.
-- Whether the version appears to be supported.
-- Which template sections are missing or incomplete.
-- Whether the bug should likely be marked Incomplete or Invalid.
+- Whether the report is an actual bug, a feature request, or a support request.
+- For an actual bug, the OpenStack version mentioned and whether it appears to be supported.
+- For an actual bug, which template sections are missing or incomplete.
+- Whether the report should likely be marked Incomplete or Invalid, if a status change is needed.
 
 This reasoning step is internal and must not appear in the final output.
 
