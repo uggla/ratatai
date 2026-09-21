@@ -36,6 +36,7 @@ use crate::{
 };
 
 const PROJECT: &str = "nova";
+const GEMINI_MODEL: &str = "gemini-3.8-flash";
 
 #[derive(Debug)]
 enum LpMessage {
@@ -75,7 +76,7 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> 
 
     let chat_task = tokio::spawn(async move {
         let chat = client
-            .generative_model("gemini-3.5-flash")
+            .generative_model(GEMINI_MODEL)
             .with_system_instruction(system_instruction);
         let mut session = chat.start_chat();
         info!("Chat started");
