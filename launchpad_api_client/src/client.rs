@@ -73,14 +73,10 @@ mod tests {
 
         let result = client.get(invalid_url).await;
 
-        // assert that the result is an err
-        assert!(result.is_err());
-
-        let error = format!("{:?}", result.unwrap_err());
-        assert_eq!(
-            "HttpRequest(reqwest::Error { kind: Builder, source: RelativeUrlWithoutBase })",
-            &error
-        );
+        match result.unwrap_err() {
+            LaunchpadError::HttpRequest(error) => assert!(error.is_builder()),
+            error => panic!("unexpected error: {error:?}"),
+        }
     }
 
     #[tokio::test]
@@ -90,14 +86,16 @@ mod tests {
 
         let result = client.get(invalid_url).await;
 
-        // assert that the result is an err
-        assert!(result.is_err());
-
-        let error = format!("{:?}", result.unwrap_err());
-        assert_eq!(
-            "HttpRequest(reqwest::Error { kind: Request, url: \"http://thisdomaindoesnotexist/\", source: hyper_util::client::legacy::Error(Connect, ConnectError(\"dns error\", Custom { kind: Uncategorized, error: \"failed to lookup address information: Name or service not known\" })) })",
-            &error
-        );
+        match result.unwrap_err() {
+            LaunchpadError::HttpRequest(error) => {
+                assert!(error.is_connect());
+                assert_eq!(
+                    error.url().map(reqwest::Url::as_str),
+                    Some("http://thisdomaindoesnotexist/")
+                );
+            }
+            error => panic!("unexpected error: {error:?}"),
+        }
     }
     #[tokio::test]
     async fn test_fake_client() {
