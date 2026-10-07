@@ -30,8 +30,7 @@ print_error() {
 check_env_file() {
     if [[ ! -f .env ]]; then
         print_error ".env file not found!"
-        print_warning "Please create a .env file with your GEMINI_API_KEY:"
-        echo "GEMINI_API_KEY=your_api_key_here"
+        print_warning "Please create a .env file with AI_PROVIDER=gemini, GEMINI_API_KEY, and GEMINI_MODEL."
         exit 1
     fi
     print_status "Found .env file"
@@ -59,38 +58,16 @@ run_container() {
         podman rm -f "$CONTAINER_NAME"
     fi
 
-    # Debug: Check if .env file is readable and show its content (without sensitive data)
-    print_status "Checking .env file..."
-    if [[ -r .env ]]; then
-        print_status ".env file is readable"
-        # Show that GEMINI_API_KEY exists without showing the actual key
-        if grep -q "GEMINI_API_KEY=" .env; then
-            print_status "GEMINI_API_KEY found in .env file"
-        else
-            print_warning "GEMINI_API_KEY not found in .env file!"
-        fi
-    else
+    if [[ ! -r .env ]]; then
         print_error ".env file is not readable!"
         exit 1
-    fi
-    
-    # Load .env file and pass environment variable directly (more reliable with user namespaces)
-    if [[ -f .env ]]; then
-        source .env
-        print_status "Loaded environment variables from .env file"
-        if [[ -n "$GEMINI_API_KEY" ]]; then
-            print_status "GEMINI_API_KEY loaded successfully (length: ${#GEMINI_API_KEY})"
-        else
-            print_error "GEMINI_API_KEY not found in environment after loading .env"
-            exit 1
-        fi
     fi
     
     # Run the container with current directory mounted as working directory
     # Use --userns=keep-id to automatically map current user to container user
     podman run -it \
         --name "$CONTAINER_NAME" \
-        --env GEMINI_API_KEY="$GEMINI_API_KEY" \
+        --env-file .env \
         --env RUST_LOG="${RUST_LOG:-info}" \
         --volume "$(pwd):/app:Z" \
         --userns=keep-id \

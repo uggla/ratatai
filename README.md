@@ -6,7 +6,7 @@ browsing and managing Ubuntu Launchpad bugs with AI-powered assistance.
 It provides an interactive terminal interface for viewing bug lists, examining
 bug details, and generating AI-assisted responses to incomplete/invalid bugs.
 The application integrates with the Ubuntu Launchpad API to fetch bug
-information and uses Google's Gemini AI to help analyze bugs and suggest
+information and uses Gemini AI to help analyze bugs and suggest
 responses.
 
 This project is part of exploring and becoming familiar with Artificial
@@ -35,11 +35,11 @@ ratatai currently supports the following operations:
    - Scroll through bug content with keyboard navigation.
    - Real-time fetching of detailed bug information.
 3. **AI-Powered Analysis**: Generate AI-assisted responses and analysis for bugs.
-   - Uses Google Gemini AI for intelligent bug analysis.
+   - Uses Gemini AI for intelligent bug analysis.
    - Contextual responses based on bug content and history.
 
-All processing uses the Ubuntu Launchpad public API for bug data and Google's
-Gemini AI service for intelligent analysis. The TUI is built with ratatui
+Bug data comes from the Ubuntu Launchpad public API. AI analysis uses Gemini.
+The TUI is built with ratatui
 for a responsive terminal experience, and all operations are asynchronous
 to maintain UI responsiveness during network operations.
 
@@ -92,11 +92,22 @@ sudo apt-get install gcc libssl-dev pkg-config build-essential
 
 #### 2- Setup environment
 
-Create a `.env` file in the project root with your Google API key:
+Create a `.env` file in the project root. For Gemini:
 
 ```bash
-echo "GEMINI_API_KEY=your_api_key_here" > .env
+cat > .env <<'EOF'
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-3.8-flash
+EOF
 ```
+
+`AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL` are required. This version
+supports `AI_PROVIDER=gemini`; the provider and model remain fixed
+until the application restarts. Entering AI triage starts a new conversation;
+drafting and follow-up messages share it until you leave AI triage with `Esc`.
+Re-entering AI triage starts a fresh conversation, even for the same bug.
+The `a` shortcut in bug details remains a standalone request outside AI triage.
 
 To get a Google API key:
 
@@ -177,7 +188,7 @@ RUST_LOG=debug ./run-podman.sh
 ```
 
 The script will:
-- Verify that `.env` exists and contains `GEMINI_API_KEY`
+- Verify that `.env` exists (the application checks `AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL`)
 - Mount the current directory as `/app` in the container
 - Map your user ID into the container (`--userns=keep-id`)
 - Persist logs to the host `./logs` directory
@@ -239,10 +250,12 @@ The script will:
 
 ### Environment Variables
 
-| Variable         | Description                                 | Default |
-| :--------------- | :------------------------------------------ | :------ |
-| `GEMINI_API_KEY` | Google API key for Gemini AI (required)     | None    |
-| `RUST_LOG`       | Log level (error, warn, info, debug, trace) | info    |
+| Variable | Description | Default |
+| :-- | :-- | :-- |
+| `AI_PROVIDER` | `gemini` (required) | None |
+| `GEMINI_API_KEY` | Google API key (required) | None |
+| `GEMINI_MODEL` | Gemini model ID (required) | None |
+| `RUST_LOG` | Log level (error, warn, info, debug, trace) | info |
 
 ## **Project Structure**
 

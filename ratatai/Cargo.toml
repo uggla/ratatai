@@ -21,6 +21,7 @@ tracing-subscriber = { version = "0.3.23", features = [
 ] }
 tracing-appender = "0.2.5"
 anyhow = "1.0.104"
+async-trait = "0.1"
 regex = "1.13.1"
 reqwest = "0.13.5"
 scraper = "0.27.0"

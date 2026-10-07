@@ -4,18 +4,16 @@ use crossterm::{
     event::{KeyCode, KeyEvent, KeyEventKind},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use google_ai_rs::GenerativeModel;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use std::{env, sync::Arc};
+use std::env;
 use tempfile::NamedTempFile;
 use tokio::{fs::File, io::AsyncReadExt, process::Command};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     PROJECT,
-    ai::get_gemini_response,
-    app::{ActivePanel, App, Screen},
+    app::{ActivePanel, AiTarget, App, Screen},
 };
 
 #[derive(Debug, PartialEq)]
@@ -84,6 +82,7 @@ fn handle_bug_list_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<Q
 fn handle_bug_editing_screen_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<QuitApp> {
     match key.code {
         KeyCode::Esc => {
+            app.end_ai_session();
             app.current_screen = Screen::BugList;
             app.active_panel = ActivePanel::Left;
         }
@@ -165,50 +164,29 @@ async fn handle_bug_description(
             }
         }
         KeyCode::Char('a') => {
-            let client = Arc::clone(&app.gemini_client);
-            let gemini_response_text_for_spawn = Arc::clone(&app.gemini_response);
-            let prompt = { gemini_response_text_for_spawn.lock().unwrap().clone() };
-
-            tokio::spawn(async move {
-                let model = GenerativeModel::new(&client, crate::GEMINI_MODEL);
-                debug!("One-shot prompt: {prompt}");
-
-                match get_gemini_response(model, prompt).await {
-                    Ok(response) => {
-                        let text = response.text();
-                        debug!("One-shot response: {text}");
-                        let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                        *response_guard = text;
-                    }
-                    Err(e) => {
-                        error!("One-shot error: {e}");
-                        let mut response_guard = gemini_response_text_for_spawn.lock().unwrap();
-                        *response_guard = format!("Error while fetching the response: {e}");
-                    }
-                }
-            });
-            // Ai request
+            if app.current_bug.is_some() {
+                app.request_ai(AiTarget::BugDescription, app.bug_description_text.clone());
+            }
         }
         KeyCode::Char('e') => {
-            let initial_content = { app.gemini_response.lock().unwrap().clone() };
+            let initial_content = app.bug_description_text.clone();
             let updated = edit_content_in_editor(terminal, initial_content).await?;
-            {
-                let mut response_guard = app.gemini_response.lock().unwrap();
-                *response_guard = updated;
-            }
+            app.bug_description_text = updated;
         }
         KeyCode::Enter => {
             if app.current_screen == Screen::BugList {
+                if app.current_bug.is_none() {
+                    return Ok(QuitApp::No);
+                }
+                app.start_ai_session();
                 app.current_screen = Screen::BugEditing;
                 app.active_panel = ActivePanel::Left;
                 app.bug_reply_text = "Press Enter to generate AI response.".to_string();
                 app.ai_generation_triggered = false;
             } else if app.current_screen == Screen::BugEditing {
-                let bug_content = { app.gemini_response.lock().unwrap().clone() };
-                debug!("Chat prompt (bug content): {bug_content}");
-                app.app_sender.send(bug_content).await?;
+                let bug_content = app.bug_description_text.clone();
+                app.request_ai(AiTarget::Draft, bug_content);
                 app.bug_reply_text = "Waiting for AI response...".to_string();
-                app.spinner_enabled = true;
                 app.ai_generation_triggered = true;
             }
         }
@@ -247,9 +225,7 @@ async fn handle_bug_reply(
         //     app.bug_desc_scroll_to_end = true;
         // }
         KeyCode::Enter => {
-            debug!("Chat follow-up prompt: {}", app.bug_reply_text);
-            app.app_sender.send(app.bug_reply_text.clone()).await?;
-            app.spinner_enabled = true;
+            app.request_ai(AiTarget::Draft, app.bug_reply_text.clone());
         }
         KeyCode::Char('e') => {
             let initial_content = app.bug_reply_text.clone();
@@ -303,4 +279,66 @@ where
     terminal.hide_cursor()?;
 
     Ok(updated_content)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use crossterm::event::KeyModifiers;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::ai_backend::{AiProvider, AiSession};
+
+    struct FakeProvider;
+
+    impl AiProvider for FakeProvider {
+        fn start_session(&self, _instruction: String) -> Box<dyn AiSession> {
+            Box::new(FakeSession)
+        }
+    }
+
+    struct FakeSession;
+
+    #[async_trait]
+    impl AiSession for FakeSession {
+        async fn send(&mut self, prompt: String) -> anyhow::Result<String> {
+            Ok(prompt)
+        }
+    }
+
+    #[tokio::test]
+    async fn tab_keeps_session_and_escape_from_triage_ends_it() {
+        let (lp_sender, _) = mpsc::channel(1);
+        let (ai_sender, mut ai_receiver) = mpsc::channel(1);
+        let mut app = App::new(
+            Arc::new(FakeProvider),
+            "rules".into(),
+            launchpad_api_client::client::ReqwestClient::new(),
+            lp_sender,
+            ai_sender,
+        );
+        app.start_ai_session();
+        app.active_panel = ActivePanel::Right;
+
+        handle_bug_list_screen_keys(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+            .unwrap();
+        assert_eq!(app.active_panel, ActivePanel::Left);
+        app.request_ai(AiTarget::Draft, "still active".into());
+        assert_eq!(
+            ai_receiver.recv().await.unwrap().result.unwrap(),
+            "still active"
+        );
+
+        app.current_screen = Screen::BugEditing;
+        app.bug_description_text = "bug details".into();
+        handle_bug_editing_screen_keys(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut app)
+            .unwrap();
+        assert_eq!(app.current_screen, Screen::BugList);
+        assert_eq!(app.bug_description_text, "bug details");
+        app.request_ai(AiTarget::Draft, "should not send".into());
+        assert!(ai_receiver.try_recv().is_err());
+    }
 }

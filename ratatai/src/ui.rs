@@ -46,7 +46,7 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
             // Left Panel (Table)
             draw_bug_list(f, app, main_chunks[0]);
 
-            // Right Panel (Gemini Response)
+            // Right panel (bug details and AI analysis)
             draw_bug_description(f, app, main_chunks[1]);
         }
         Screen::BugEditing => {
@@ -201,7 +201,7 @@ fn draw_bug_list(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_bug_description(f: &mut Frame, app: &mut App, area: Rect) {
-    let current_display_text = app.gemini_response.lock().unwrap().clone();
+    let current_display_text = app.bug_description_text.clone();
     // Replace tab characters with spaces to prevent layout corruption.
     // The Paragraph widget miscalculates line widths when tabs are present,
     // causing severe misalignment and scroll glitches.

@@ -2,20 +2,34 @@
 
 use std::collections::HashSet;
 
-use google_ai_rs::Client;
 use launchpad_api_client::{
     BugTaskEntry, LaunchpadBug, LaunchpadError, StatusFilter, get_bug as lp_get_bug,
     get_project_bug_tasks,
 };
 use ratatui::widgets::{Cell, Row, ScrollbarState, TableState};
 use regex::Regex;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use throbber_widgets_tui::ThrobberState;
-use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{Duration, sleep};
+use tokio::{
+    sync::mpsc::{self, Sender, UnboundedSender},
+    task::JoinHandle,
+};
 use tracing::{error, info};
 
-use crate::{LpMessage, ui::SPINNER_LABELS};
+use crate::{LpMessage, ai_backend::AiProvider, ui::SPINNER_LABELS};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AiTarget {
+    BugDescription,
+    Draft,
+}
+
+pub(crate) struct AiResponse {
+    pub generation: u64,
+    pub target: AiTarget,
+    pub result: anyhow::Result<String>,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -30,7 +44,6 @@ pub(crate) enum ActivePanel {
 }
 
 /// Represents the state of the TUI application.
-#[derive(Debug)]
 pub(crate) struct App {
     pub bug_table_items: Box<[BugTaskEntry]>,
     pub bug_table_rows: Vec<Row<'static>>,
@@ -48,12 +61,17 @@ pub(crate) struct App {
     pub spinner_state: ThrobberState,
     /// Current index for the spinner label in SPINNER_LABELS
     pub spinner_label_index: usize,
-    pub gemini_client: Arc<Client>,
+    ai_provider: Arc<dyn AiProvider>,
+    ai_request_sender: Option<UnboundedSender<(AiTarget, String)>>,
+    ai_worker: Option<JoinHandle<()>>,
+    pending_ai_requests: usize,
+    system_instruction: String,
+    session_generation: u64,
+    bug_request_generation: u64,
+    ai_sender: Sender<AiResponse>,
     pub launchpad_client: Arc<launchpad_api_client::client::ReqwestClient>,
-    pub gemini_response: Arc<Mutex<String>>,
+    pub bug_description_text: String,
     pub lp_sender: Sender<LpMessage>,
-    pub app_sender: Sender<String>,
-    pub chat_receiver: Receiver<String>,
     pub bug_reply_text: String,
     /// Whether the first AI generation has been triggered in BugEditing mode
     pub ai_generation_triggered: bool,
@@ -64,11 +82,11 @@ pub(crate) struct App {
 impl App {
     /// Creates a new instance of the application with the initial state.
     pub(crate) fn new(
-        gemini_client: Client,
+        ai_provider: Arc<dyn AiProvider>,
+        system_instruction: String,
         launchpad_client: launchpad_api_client::client::ReqwestClient,
         lp_sender: Sender<LpMessage>,
-        app_sender: Sender<String>,
-        chat_receiver: Receiver<String>,
+        ai_sender: Sender<AiResponse>,
     ) -> App {
         let items = Box::new([]);
         let mut table_state = TableState::default();
@@ -90,12 +108,17 @@ impl App {
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
             spinner_label_index: 0,
-            gemini_client: Arc::new(gemini_client),
+            ai_provider,
+            ai_request_sender: None,
+            ai_worker: None,
+            pending_ai_requests: 0,
+            system_instruction,
+            session_generation: 0,
+            bug_request_generation: 0,
+            ai_sender,
             launchpad_client: Arc::new(launchpad_client),
-            gemini_response: Arc::new(Mutex::new(String::new())),
+            bug_description_text: String::new(),
             lp_sender,
-            app_sender,
-            chat_receiver,
             bug_reply_text: String::new(),
             ai_generation_triggered: false,
             roster_bug_ids: None,
@@ -298,7 +321,9 @@ impl App {
     }
 
     pub(crate) fn get_bug(&mut self, bug_id: u32) {
+        self.close_bug();
         self.spinner_enabled = true;
+        let request_generation = self.bug_request_generation;
         let sender = self.lp_sender.clone();
         let client = self.launchpad_client.clone();
         tokio::spawn(async move {
@@ -306,12 +331,18 @@ impl App {
 
             match lp_get_bug(&*client, bug_id).await {
                 Ok(bug) => {
-                    if let Err(e) = sender.send(LpMessage::Bug(bug.into())).await {
+                    if let Err(e) = sender
+                        .send(LpMessage::Bug(request_generation, bug.into()))
+                        .await
+                    {
                         error!("Fail to send message, error {e}");
                     }
                 }
                 Err(e) => {
-                    if let Err(e) = sender.send(LpMessage::Error(e)).await {
+                    if let Err(e) = sender
+                        .send(LpMessage::BugError(request_generation, e))
+                        .await
+                    {
                         error!("Fail to send message, error {e}");
                     }
                 }
@@ -320,17 +351,194 @@ impl App {
         });
     }
 
-    pub(crate) fn update_bug(&mut self, bug: LaunchpadBug) {
+    pub(crate) fn update_bug(&mut self, request_generation: u64, bug: LaunchpadBug) {
+        if request_generation != self.bug_request_generation {
+            return;
+        }
         self.current_bug = Some(bug);
-        let mut response_guard = self.gemini_response.lock().unwrap();
-        *response_guard = self.current_bug.as_ref().unwrap().description.clone();
+        self.bug_description_text = self.current_bug.as_ref().unwrap().description.clone();
+        self.bug_reply_text.clear();
+        self.ai_generation_triggered = false;
         self.bug_desc_scroll = 0;
         self.bug_desc_scroll_to_end = false;
         self.spinner_enabled = false;
     }
 
+    pub(crate) fn is_current_bug_request(&self, generation: u64) -> bool {
+        generation == self.bug_request_generation
+    }
+
     pub(crate) fn update_bug_reply(&mut self, msg: String) {
         self.bug_reply_text = msg;
-        self.spinner_enabled = false
+    }
+
+    pub(crate) fn close_bug(&mut self) {
+        self.end_ai_session();
+        self.bug_request_generation += 1;
+        self.current_bug = None;
+        self.bug_description_text.clear();
+        self.bug_reply_text.clear();
+        self.ai_generation_triggered = false;
+    }
+
+    pub(crate) fn end_ai_session(&mut self) {
+        self.session_generation += 1;
+        self.ai_request_sender = None;
+        if let Some(worker) = self.ai_worker.take() {
+            worker.abort();
+        }
+        self.pending_ai_requests = 0;
+        self.spinner_enabled = false;
+    }
+
+    pub(crate) fn start_ai_session(&mut self) {
+        self.end_ai_session();
+        let mut session = self
+            .ai_provider
+            .start_session(self.system_instruction.clone());
+        let (request_sender, mut request_receiver) = mpsc::unbounded_channel();
+        let response_sender = self.ai_sender.clone();
+        let generation = self.session_generation;
+        self.ai_request_sender = Some(request_sender);
+        self.ai_worker = Some(tokio::spawn(async move {
+            while let Some((target, prompt)) = request_receiver.recv().await {
+                let result = session.send(prompt).await;
+                if response_sender
+                    .send(AiResponse {
+                        generation,
+                        target,
+                        result,
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+    }
+
+    pub(crate) fn request_ai(&mut self, target: AiTarget, prompt: String) {
+        if let Some(sender) = &self.ai_request_sender {
+            if sender.send((target, prompt)).is_ok() {
+                self.pending_ai_requests += 1;
+                self.spinner_enabled = true;
+            }
+        } else if target == AiTarget::BugDescription {
+            let mut session = self
+                .ai_provider
+                .start_session(self.system_instruction.clone());
+            let sender = self.ai_sender.clone();
+            let generation = self.session_generation;
+            self.pending_ai_requests += 1;
+            self.spinner_enabled = true;
+            tokio::spawn(async move {
+                let result = session.send(prompt).await;
+                let _ = sender
+                    .send(AiResponse {
+                        generation,
+                        target,
+                        result,
+                    })
+                    .await;
+            });
+        }
+    }
+
+    pub(crate) fn apply_ai_response(&mut self, response: AiResponse) {
+        if response.generation != self.session_generation
+            || (self.ai_request_sender.is_none()
+                && (response.target == AiTarget::Draft || self.current_bug.is_none()))
+        {
+            return;
+        }
+        self.pending_ai_requests = self.pending_ai_requests.saturating_sub(1);
+        let text = match response.result {
+            Ok(text) => text,
+            Err(e) => {
+                error!("AI request failed: {e}");
+                format!("⚠️ {e}")
+            }
+        };
+        match response.target {
+            AiTarget::BugDescription => self.bug_description_text = text,
+            AiTarget::Draft => self.update_bug_reply(text),
+        }
+        self.spinner_enabled = self.pending_ai_requests > 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    use async_trait::async_trait;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::ai_backend::AiSession;
+
+    struct FakeProvider(Arc<StdMutex<Vec<Vec<String>>>>);
+
+    impl AiProvider for FakeProvider {
+        fn start_session(&self, _instruction: String) -> Box<dyn AiSession> {
+            let mut sessions = self.0.lock().unwrap();
+            sessions.push(Vec::new());
+            Box::new(FakeSession {
+                sessions: Arc::clone(&self.0),
+                index: sessions.len() - 1,
+            })
+        }
+    }
+
+    struct FakeSession {
+        sessions: Arc<StdMutex<Vec<Vec<String>>>>,
+        index: usize,
+    }
+
+    #[async_trait]
+    impl AiSession for FakeSession {
+        async fn send(&mut self, prompt: String) -> anyhow::Result<String> {
+            self.sessions.lock().unwrap()[self.index].push(prompt.clone());
+            Ok(prompt)
+        }
+    }
+
+    #[tokio::test]
+    async fn conversation_is_shared_then_reset_and_late_replies_are_ignored() {
+        let sessions = Arc::new(StdMutex::new(Vec::new()));
+        let (lp_sender, _) = mpsc::channel(1);
+        let (ai_sender, mut ai_receiver) = mpsc::channel(4);
+        let mut app = App::new(
+            Arc::new(FakeProvider(Arc::clone(&sessions))),
+            "triage rules".into(),
+            launchpad_api_client::client::ReqwestClient::new(),
+            lp_sender,
+            ai_sender,
+        );
+
+        app.start_ai_session();
+        app.request_ai(AiTarget::BugDescription, "analysis".into());
+        app.request_ai(AiTarget::Draft, "draft".into());
+        app.apply_ai_response(ai_receiver.recv().await.unwrap());
+        app.apply_ai_response(ai_receiver.recv().await.unwrap());
+        assert_eq!(sessions.lock().unwrap()[0], ["analysis", "draft"]);
+
+        app.request_ai(AiTarget::Draft, "late".into());
+        let late = ai_receiver.recv().await.unwrap();
+        app.end_ai_session();
+        app.apply_ai_response(late);
+        assert_eq!(app.bug_reply_text, "draft");
+        assert_eq!(app.bug_description_text, "analysis");
+
+        app.start_ai_session();
+        app.request_ai(AiTarget::Draft, "new".into());
+        app.apply_ai_response(ai_receiver.recv().await.unwrap());
+        let sessions = sessions.lock().unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[1], ["new"]);
+        drop(sessions);
+        app.close_bug();
+        assert!(app.bug_description_text.is_empty());
     }
 }
