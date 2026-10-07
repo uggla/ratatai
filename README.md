@@ -105,10 +105,23 @@ chmod 600 .envrc
 direnv allow .envrc
 ```
 
-Replace `your_api_key_here` with your Google API key. `.envrc` is ignored by
+To use OpenAI instead, replace the Gemini exports in `.envrc` with:
+
+```bash
+export AI_PROVIDER=openai
+export OPENAI_API_KEY=your_openai_api_key_here
+export OPENAI_MODEL=gpt-5.6-luna
+export OPENAI_REASONING_EFFORT=medium
+```
+
+Run `direnv allow .envrc` after editing the file.
+
+Replace the placeholder key with your provider's API key. `.envrc` is ignored by
 Git; direnv loads its exported variables when you enter the project directory.
-`AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL` are required. This version
-supports `AI_PROVIDER=gemini`; the provider and model remain fixed
+`AI_PROVIDER` is required and accepts `gemini` or `openai`. Gemini requires
+`GEMINI_API_KEY` and `GEMINI_MODEL`; OpenAI requires `OPENAI_API_KEY`,
+`OPENAI_MODEL`, and `OPENAI_REASONING_EFFORT` (`low`, `medium`, or `high`).
+The provider and model remain fixed
 until the application restarts. Entering AI triage starts a new conversation;
 drafting and follow-up messages share it until you leave AI triage with `Esc`.
 Re-entering AI triage starts a fresh conversation, even for the same bug.
@@ -142,9 +155,12 @@ You can also run ratatai using Podman with full development environment support:
 ./run-podman.sh build
 ./run-podman.sh run
 
-# Or manually
+# Or manually with Gemini
 podman build -t ratatai -f Containerfile .
 podman run -it --env AI_PROVIDER --env GEMINI_API_KEY --env GEMINI_MODEL --volume "$(pwd):/app:Z" --userns=keep-id --rm ratatai
+
+# Or manually with OpenAI
+podman run -it --env AI_PROVIDER --env OPENAI_API_KEY --env OPENAI_MODEL --env OPENAI_REASONING_EFFORT --volume "$(pwd):/app:Z" --userns=keep-id --rm ratatai
 ```
 
 **Container Features:**
@@ -193,7 +209,7 @@ RUST_LOG=debug ./run-podman.sh
 ```
 
 The script will:
-- Verify that direnv has exported `AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL`
+- Verify that direnv has exported the variables required by the selected AI provider
 - Mount the current directory as `/app` in the container
 - Map your user ID into the container (`--userns=keep-id`)
 - Persist logs to the host `./logs` directory
@@ -257,9 +273,12 @@ The script will:
 
 | Variable | Description | Default |
 | :-- | :-- | :-- |
-| `AI_PROVIDER` | `gemini` (required) | None |
-| `GEMINI_API_KEY` | Google API key (required) | None |
-| `GEMINI_MODEL` | Gemini model ID (required) | None |
+| `AI_PROVIDER` | `gemini` or `openai` (required) | None |
+| `GEMINI_API_KEY` | Google API key (required for Gemini) | None |
+| `GEMINI_MODEL` | Gemini model ID (required for Gemini) | None |
+| `OPENAI_API_KEY` | OpenAI API key (required for OpenAI) | None |
+| `OPENAI_MODEL` | OpenAI model ID (required for OpenAI) | None |
+| `OPENAI_REASONING_EFFORT` | OpenAI reasoning effort: `low`, `medium`, or `high` (required for OpenAI) | None |
 | `RUST_LOG` | Log level (error, warn, info, debug, trace) | info |
 
 ## **Project Structure**

@@ -295,6 +295,10 @@ mod tests {
     struct FakeProvider;
 
     impl AiProvider for FakeProvider {
+        fn display_name(&self) -> &'static str {
+            "Test AI"
+        }
+
         fn start_session(&self, _instruction: String) -> Box<dyn AiSession> {
             Box::new(FakeSession)
         }

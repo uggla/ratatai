@@ -18,15 +18,6 @@ use throbber_widgets_tui::Throbber;
 
 use crate::app::{ActivePanel, App, Screen};
 
-/// Playful labels for the spinner, cycled with each 's' key press
-pub const SPINNER_LABELS: [&str; 5] = [
-    "Loading...",
-    "Patience, young padawan...",
-    "Don't blink",
-    "Tinkering...",
-    "Coffee time",
-];
-
 /// Draws the application's user interface.
 /// Takes a Ratatui Frame and a mutable reference to the application state.
 pub fn draw_ui(f: &mut Frame, app: &mut App) {
@@ -67,7 +58,13 @@ pub fn draw_ui(f: &mut Frame, app: &mut App) {
 /// Draws the bottom panel for the spinner and time.
 fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let time_str = Local::now().format("%H:%M:%S").to_string();
-    let spinner_label_width = SPINNER_LABELS[app.spinner_label_index].len() as u16 + 2; // +2 for throbber
+    let status = if app.is_loading() {
+        "Loading..."
+    } else {
+        "Waiting..."
+    };
+    let spinner_label = format!("{} · {status}", app.ai_provider_name());
+    let spinner_label_width = spinner_label.chars().count() as u16 + 2; // +2 for throbber
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(
@@ -86,7 +83,7 @@ fn draw_bottom_panel(f: &mut Frame, app: &mut App, area: Rect) {
     }
     let spinner = Throbber::default()
         .throbber_style(Style::default().fg(Color::Magenta))
-        .label(SPINNER_LABELS[app.spinner_label_index])
+        .label(spinner_label.as_str())
         .style(Style::default().fg(Color::Cyan));
     f.render_stateful_widget(spinner, chunks[0], &mut app.spinner_state);
 

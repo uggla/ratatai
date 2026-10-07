@@ -1,4 +1,5 @@
 mod gemini;
+mod openai;
 
 use std::{env, sync::Arc};
 
@@ -6,6 +7,7 @@ use anyhow::bail;
 use async_trait::async_trait;
 
 pub(crate) trait AiProvider: Send + Sync {
+    fn display_name(&self) -> &'static str;
     fn start_session(&self, instruction: String) -> Box<dyn AiSession>;
 }
 
@@ -16,7 +18,15 @@ pub(crate) trait AiSession: Send {
 
 #[derive(Debug, PartialEq, Eq)]
 enum ProviderSettings {
-    Gemini { api_key: String, model: String },
+    Gemini {
+        api_key: String,
+        model: String,
+    },
+    OpenAi {
+        api_key: String,
+        model: String,
+        reasoning_effort: openai::ReasoningEffort,
+    },
 }
 
 fn required_env(name: &str, get: &impl Fn(&str) -> Option<String>) -> anyhow::Result<String> {
@@ -33,7 +43,12 @@ fn provider_settings(get: &impl Fn(&str) -> Option<String>) -> anyhow::Result<Pr
             api_key: required_env("GEMINI_API_KEY", get)?,
             model: required_env("GEMINI_MODEL", get)?,
         }),
-        other => bail!("Unsupported AI_PROVIDER '{other}'; this version supports 'gemini'"),
+        "openai" => Ok(ProviderSettings::OpenAi {
+            api_key: required_env("OPENAI_API_KEY", get)?,
+            model: required_env("OPENAI_MODEL", get)?,
+            reasoning_effort: required_env("OPENAI_REASONING_EFFORT", get)?.parse()?,
+        }),
+        other => bail!("Unsupported AI_PROVIDER '{other}'; supported values: gemini, openai"),
     }
 }
 
@@ -43,6 +58,15 @@ pub(crate) async fn configured_provider() -> anyhow::Result<Arc<dyn AiProvider>>
         ProviderSettings::Gemini { api_key, model } => {
             Ok(Arc::new(gemini::GeminiProvider::new(api_key, model).await?))
         }
+        ProviderSettings::OpenAi {
+            api_key,
+            model,
+            reasoning_effort,
+        } => Ok(Arc::new(openai::OpenAiProvider::new(
+            api_key,
+            model,
+            reasoning_effort,
+        ))),
     }
 }
 
@@ -76,6 +100,25 @@ mod tests {
             ProviderSettings::Gemini { .. }
         ));
         vars.insert("AI_PROVIDER", "openai");
-        assert!(provider_settings(&|name| vars.get(name).map(|v| v.to_string())).is_err());
+        assert!(
+            provider_settings(&|name| vars.get(name).map(|v| v.to_string()))
+                .unwrap_err()
+                .to_string()
+                .contains("OPENAI_API_KEY")
+        );
+        vars.insert("OPENAI_API_KEY", "key");
+        vars.insert("OPENAI_MODEL", "model");
+        vars.insert("OPENAI_REASONING_EFFORT", "medium");
+        assert!(matches!(
+            provider_settings(&|name| vars.get(name).map(|v| v.to_string())).unwrap(),
+            ProviderSettings::OpenAi { .. }
+        ));
+        vars.insert("OPENAI_REASONING_EFFORT", "invalid");
+        assert!(
+            provider_settings(&|name| vars.get(name).map(|v| v.to_string()))
+                .unwrap_err()
+                .to_string()
+                .contains("OPENAI_REASONING_EFFORT")
+        );
     }
 }

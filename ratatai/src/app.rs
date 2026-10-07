@@ -17,7 +17,7 @@ use tokio::{
 };
 use tracing::{error, info};
 
-use crate::{LpMessage, ai_backend::AiProvider, ui::SPINNER_LABELS};
+use crate::{LpMessage, ai_backend::AiProvider};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiTarget {
@@ -59,8 +59,8 @@ pub(crate) struct App {
     pub spinner_enabled: bool,
     /// Stateful state for spinner animation
     pub spinner_state: ThrobberState,
-    /// Current index for the spinner label in SPINNER_LABELS
-    pub spinner_label_index: usize,
+    loading_bug_list: bool,
+    loading_bug: bool,
     ai_provider: Arc<dyn AiProvider>,
     ai_request_sender: Option<UnboundedSender<(AiTarget, String)>>,
     ai_worker: Option<JoinHandle<()>>,
@@ -107,7 +107,8 @@ impl App {
             current_bug: None,
             spinner_enabled: false,
             spinner_state: ThrobberState::default(),
-            spinner_label_index: 0,
+            loading_bug_list: false,
+            loading_bug: false,
             ai_provider,
             ai_request_sender: None,
             ai_worker: None,
@@ -213,11 +214,18 @@ impl App {
     /// Toggles the spinner display in the bottom bar.
     pub(crate) fn toggle_spinner(&mut self) {
         self.spinner_enabled = !self.spinner_enabled;
-        // Change the label with each 's' activation
-        self.spinner_label_index = (self.spinner_label_index + 1) % SPINNER_LABELS.len();
+    }
+
+    pub(crate) fn ai_provider_name(&self) -> &'static str {
+        self.ai_provider.display_name()
+    }
+
+    pub(crate) fn is_loading(&self) -> bool {
+        self.loading_bug_list || self.loading_bug || self.pending_ai_requests > 0
     }
 
     pub(crate) fn get_bugs(&mut self, project: String) {
+        self.loading_bug_list = true;
         self.spinner_enabled = true;
         self.bug_list_message = None;
         let sender = self.lp_sender.clone();
@@ -308,7 +316,8 @@ impl App {
             .collect();
         self.bug_table_state.select(Some(0));
         self.bug_table_scrollbar_state = ScrollbarState::new(self.bug_table_items.len());
-        self.spinner_enabled = false;
+        self.loading_bug_list = false;
+        self.spinner_enabled = self.is_loading();
     }
 
     pub(crate) fn update_bug_list_message(&mut self, message: String) {
@@ -317,11 +326,13 @@ impl App {
         self.bug_table_state.select(None);
         self.bug_table_scrollbar_state = ScrollbarState::new(0);
         self.bug_list_message = Some(message);
-        self.spinner_enabled = false;
+        self.loading_bug_list = false;
+        self.spinner_enabled = self.is_loading();
     }
 
     pub(crate) fn get_bug(&mut self, bug_id: u32) {
         self.close_bug();
+        self.loading_bug = true;
         self.spinner_enabled = true;
         let request_generation = self.bug_request_generation;
         let sender = self.lp_sender.clone();
@@ -361,7 +372,8 @@ impl App {
         self.ai_generation_triggered = false;
         self.bug_desc_scroll = 0;
         self.bug_desc_scroll_to_end = false;
-        self.spinner_enabled = false;
+        self.loading_bug = false;
+        self.spinner_enabled = self.is_loading();
     }
 
     pub(crate) fn is_current_bug_request(&self, generation: u64) -> bool {
@@ -374,6 +386,8 @@ impl App {
 
     pub(crate) fn close_bug(&mut self) {
         self.end_ai_session();
+        self.loading_bug = false;
+        self.spinner_enabled = self.is_loading();
         self.bug_request_generation += 1;
         self.current_bug = None;
         self.bug_description_text.clear();
@@ -388,7 +402,7 @@ impl App {
             worker.abort();
         }
         self.pending_ai_requests = 0;
-        self.spinner_enabled = false;
+        self.spinner_enabled = self.is_loading();
     }
 
     pub(crate) fn start_ai_session(&mut self) {
@@ -464,7 +478,7 @@ impl App {
             AiTarget::BugDescription => self.bug_description_text = text,
             AiTarget::Draft => self.update_bug_reply(text),
         }
-        self.spinner_enabled = self.pending_ai_requests > 0;
+        self.spinner_enabled = self.is_loading();
     }
 }
 
@@ -481,6 +495,10 @@ mod tests {
     struct FakeProvider(Arc<StdMutex<Vec<Vec<String>>>>);
 
     impl AiProvider for FakeProvider {
+        fn display_name(&self) -> &'static str {
+            "Test AI"
+        }
+
         fn start_session(&self, _instruction: String) -> Box<dyn AiSession> {
             let mut sessions = self.0.lock().unwrap();
             sessions.push(Vec::new());

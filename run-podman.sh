@@ -26,10 +26,22 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check that direnv has exported the variables needed by the application.
+# Check that direnv has exported the variables needed by the selected provider.
 check_ai_environment() {
     local name
-    for name in AI_PROVIDER GEMINI_API_KEY GEMINI_MODEL; do
+    if [[ -z "${AI_PROVIDER:-}" ]]; then
+        print_error "AI_PROVIDER is not set. Load .envrc with direnv before running the container."
+        exit 1
+    fi
+    case "$AI_PROVIDER" in
+        gemini) local required=(GEMINI_API_KEY GEMINI_MODEL) ;;
+        openai) local required=(OPENAI_API_KEY OPENAI_MODEL OPENAI_REASONING_EFFORT) ;;
+        *)
+            print_error "Unsupported AI_PROVIDER: $AI_PROVIDER"
+            exit 1
+            ;;
+    esac
+    for name in "${required[@]}"; do
         if [[ -z "${!name:-}" ]]; then
             print_error "$name is not set. Load .envrc with direnv before running the container."
             exit 1
@@ -48,6 +60,11 @@ build_image() {
 # Function to run container
 run_container() {
     print_status "Starting container: $CONTAINER_NAME"
+    local env_args=(--env AI_PROVIDER)
+    case "$AI_PROVIDER" in
+        gemini) env_args+=(--env GEMINI_API_KEY --env GEMINI_MODEL) ;;
+        openai) env_args+=(--env OPENAI_API_KEY --env OPENAI_MODEL --env OPENAI_REASONING_EFFORT) ;;
+    esac
     
     # Create local logs directory if it doesn't exist
     mkdir -p ./logs
@@ -63,9 +80,7 @@ run_container() {
     # Use --userns=keep-id to automatically map current user to container user
     podman run -it \
         --name "$CONTAINER_NAME" \
-        --env AI_PROVIDER \
-        --env GEMINI_API_KEY \
-        --env GEMINI_MODEL \
+        "${env_args[@]}" \
         --env RUST_LOG="${RUST_LOG:-info}" \
         --volume "$(pwd):/app:Z" \
         --userns=keep-id \

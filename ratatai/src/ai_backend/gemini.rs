@@ -20,6 +20,10 @@ impl GeminiProvider {
 }
 
 impl AiProvider for GeminiProvider {
+    fn display_name(&self) -> &'static str {
+        "Gemini"
+    }
+
     fn start_session(&self, instruction: String) -> Box<dyn AiSession> {
         Box::new(GeminiSession {
             client: Arc::clone(&self.client),
