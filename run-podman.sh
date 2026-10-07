@@ -26,14 +26,15 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to check if .env file exists
-check_env_file() {
-    if [[ ! -f .env ]]; then
-        print_error ".env file not found!"
-        print_warning "Please create a .env file with AI_PROVIDER=gemini, GEMINI_API_KEY, and GEMINI_MODEL."
-        exit 1
-    fi
-    print_status "Found .env file"
+# Check that direnv has exported the variables needed by the application.
+check_ai_environment() {
+    local name
+    for name in AI_PROVIDER GEMINI_API_KEY GEMINI_MODEL; do
+        if [[ -z "${!name:-}" ]]; then
+            print_error "$name is not set. Load .envrc with direnv before running the container."
+            exit 1
+        fi
+    done
 }
 
 # Function to build Podman image
@@ -58,16 +59,13 @@ run_container() {
         podman rm -f "$CONTAINER_NAME"
     fi
 
-    if [[ ! -r .env ]]; then
-        print_error ".env file is not readable!"
-        exit 1
-    fi
-    
     # Run the container with current directory mounted as working directory
     # Use --userns=keep-id to automatically map current user to container user
     podman run -it \
         --name "$CONTAINER_NAME" \
-        --env-file .env \
+        --env AI_PROVIDER \
+        --env GEMINI_API_KEY \
+        --env GEMINI_MODEL \
         --env RUST_LOG="${RUST_LOG:-info}" \
         --volume "$(pwd):/app:Z" \
         --userns=keep-id \
@@ -95,11 +93,11 @@ main() {
         build_image
         ;;
     "run")
-        check_env_file
+        check_ai_environment
         run_container
         ;;
     "build-and-run")
-        check_env_file
+        check_ai_environment
         build_image
         run_container
         ;;

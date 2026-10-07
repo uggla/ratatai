@@ -1,5 +1,6 @@
 /target
 .env
+.envrc
 GEMINI.md
 AGENTS.md
 CLAUDE.md

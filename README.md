@@ -92,16 +92,21 @@ sudo apt-get install gcc libssl-dev pkg-config build-essential
 
 #### 2- Setup environment
 
-Create a `.env` file in the project root. For Gemini:
+Install [direnv](https://direnv.net/), enable its shell hook, then create a
+`.envrc` file in the project root. For Gemini:
 
 ```bash
-cat > .env <<'EOF'
-AI_PROVIDER=gemini
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=gemini-3.8-flash
+cat > .envrc <<'EOF'
+export AI_PROVIDER=gemini
+export GEMINI_API_KEY=your_api_key_here
+export GEMINI_MODEL=gemini-3.8-flash
 EOF
+chmod 600 .envrc
+direnv allow .envrc
 ```
 
+Replace `your_api_key_here` with your Google API key. `.envrc` is ignored by
+Git; direnv loads its exported variables when you enter the project directory.
 `AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL` are required. This version
 supports `AI_PROVIDER=gemini`; the provider and model remain fixed
 until the application restarts. Entering AI triage starts a new conversation;
@@ -113,7 +118,7 @@ To get a Google API key:
 
 1. Go to the [Google AI Studio](https://aistudio.google.com/)
 2. Create a new API key for Gemini
-3. Add it to your `.env` file
+3. Add it to your `.envrc` file and run `direnv allow .envrc` again
 
 ### Build the ratatai Project
 
@@ -139,7 +144,7 @@ You can also run ratatai using Podman with full development environment support:
 
 # Or manually
 podman build -t ratatai -f Containerfile .
-podman run -it --env-file .env --volume "$(pwd):/app:Z" --userns=keep-id --rm ratatai
+podman run -it --env AI_PROVIDER --env GEMINI_API_KEY --env GEMINI_MODEL --volume "$(pwd):/app:Z" --userns=keep-id --rm ratatai
 ```
 
 **Container Features:**
@@ -188,7 +193,7 @@ RUST_LOG=debug ./run-podman.sh
 ```
 
 The script will:
-- Verify that `.env` exists (the application checks `AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL`)
+- Verify that direnv has exported `AI_PROVIDER`, `GEMINI_API_KEY`, and `GEMINI_MODEL`
 - Mount the current directory as `/app` in the container
 - Map your user ID into the container (`--userns=keep-id`)
 - Persist logs to the host `./logs` directory

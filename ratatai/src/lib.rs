@@ -49,7 +49,6 @@ enum LpMessage {
 
 /// Main function of the TUI application.
 pub async fn run(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
     let ai_provider = configured_provider().await?;
 
     let (lp_sender, mut lp_receiver) = mpsc::channel::<LpMessage>(5);
