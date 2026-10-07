@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = std::sync::Arc::new(ReqwestClient::new());
 
     let mut bug_tasks = get_project_bug_tasks(&*client, "nova", Some(StatusFilter::New)).await?;
-    bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
+    bug_tasks.sort_by_key(|task| std::cmp::Reverse(task.date_created));
 
     println!("\nRequête réussie pour les tâches ! Détails des tâches de bug (premiers 2) :");
     for (i, entry) in bug_tasks.iter().take(4).enumerate() {

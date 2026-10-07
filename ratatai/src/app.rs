@@ -237,7 +237,7 @@ impl App {
             for attempt in 1..=2 {
                 match get_project_bug_tasks(&*client, &project, Some(StatusFilter::New)).await {
                     Ok(mut bug_tasks) => {
-                        bug_tasks.sort_by(|a, b| b.date_created.cmp(&a.date_created));
+                        bug_tasks.sort_by_key(|task| std::cmp::Reverse(task.date_created));
 
                         if let Err(e) = sender
                             .send(LpMessage::Bugs(bug_tasks.into_boxed_slice()))
