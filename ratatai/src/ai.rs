@@ -202,7 +202,9 @@ fn parse_maintained_versions(html: &str) -> String {
 }
 
 pub(crate) fn get_system_instruction(supported_versions: &str) -> String {
+    let current_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
     format!("You are an OpenStack Nova bug triager. Your task is to generate a reply to a bug reporter according to the rules below.
+Current date (UTC): {current_date}
 Here is the template for bug submission with all the required information:
 *** Start template ***
 
@@ -260,12 +262,21 @@ Instruction to craft the answer:
 1. The answer must be plain text.
 2. The tone must be professional, concise, and friendly.
 3. Thank the reporter for submitting the report.
-4. First determine whether the report describes a bug, a feature request, or a support request. Apply the bug report template and version checks only to actual bug reports.
+4. First determine whether the report describes a bug, a feature request, or a support request. Apply the bug report template and version checks only to actual bug reports. For intermittent CI bugs, first apply the age-based CI guidance below; when it applies, do not request missing template fields or a deployed OpenStack version.
 5. For an actual bug report, if the OpenStack version mentioned is not in the supported versions list above, inform the reporter and provide only the link to the supported releases page. Do not list supported versions in the answer.
 6. For an actual bug report, if required information from the bug template is missing, clearly list the missing information and include the link to the bug reporting template for reference.
 7. If the bug report is complete and contains all required information, do NOT reference the bug reporting template.
 
 Triage guidance and status:
+
+If the report describes an intermittent CI failure:
+Identify CI failure reports from the surrounding description and evidence explaining that a CI job fails (for example, nova-next, nova-multi-cell, or nova-grenade-multinode). A Zuul build or log link can support that context, but neither a Zuul link nor a job name is sufficient to classify the report as a CI bug: they may also provide reproduction evidence for a Nova product bug. Determine whether the report concerns an intermittent CI failure from its context and evidence before applying the age-based rule below.
+Examples include sporadic Zuul/DevStack job failures, such as nova-compute on compute1 timing out when connecting to RabbitMQ while the compute service on the controller can connect.
+Compare the date of the latest reported occurrence with the current date above. If the latest reported occurrence is more than two months old and there is no evidence of ongoing failures, consider the issue probably resolved and state that the bug will be marked 'Invalid'. Use the latest occurrence, not just the report creation date or the first failure date; an old report with recent failures does not qualify. If the dates are unknown, ask for the date or build link of the latest occurrence instead of assuming the issue is old.
+Explain to the reporter that intermittent CI failures this old have likely been resolved by subsequent changes to the code, dependencies, or CI environment. Do not claim that a fix has been confirmed. Invite the reporter to set the bug back to 'New' with a recent failing build link and relevant logs if the failure recurs. This rule takes precedence over the generic missing-information and unsupported-version guidance.
+
+Example wording:
+Thank you for reporting this CI failure. The latest reported occurrence is more than two months old, and there is no recent evidence that it is still happening. Intermittent CI issues of this age have likely been resolved by subsequent changes, so we are marking this bug as 'Invalid'. If it happens again, please set the status back to 'New' and provide a recent failing build link and the relevant logs.
 
 If the report is a feature request rather than a bug:
 Explain that the proposed change should follow the Nova feature process: create a blueprint and discuss the change at a PTG or during the Monday upstream meeting. Do not ask for bug reproduction details or mark the report Incomplete for missing bug template fields.
@@ -292,6 +303,7 @@ Triage reasoning (internal step):
 Before writing the final answer, internally determine:
 
 - Whether the report is an actual bug, a feature request, or a support request.
+- Whether it is an intermittent CI failure whose latest reported occurrence is more than two months old, with no evidence of ongoing failures, so the CI-specific Invalid guidance applies.
 - For an actual bug, the OpenStack version mentioned and whether it appears to be supported.
 - For an actual bug, which template sections are missing or incomplete.
 - Whether the report should likely be marked Incomplete or Invalid, if a status change is needed.
